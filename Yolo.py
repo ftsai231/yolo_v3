@@ -1,14 +1,15 @@
 import tensorflow as tf
+from config import cfg
+import utils as utils
 
-from Yolo_model import darknet53, yolo_conv_block, _ANCHORS, yolo_detection_layer, con2d_fixed_padding, batch_norm, \
-    _LEAKY_RELU, upsample, build_boxes, non_max_suppression, _MODEL_SIZE, max_output_size, iou_threshold, threshold
-
+from Yolo_model import darknet53, yolo_conv_block, yolo_detection_layer, con2d_fixed_padding, batch_norm, \
+    upsample, build_boxes, non_max_suppression, loss_layer
 
 
 class YoloV3:
 
     # for building the final yolo model
-    def __init__(self, n_classes, model_size, max_output_size, iou_threshold, confidence_threshold, data_format=None):
+    def __init__(self, inputs, training, data_format=None):
         """Creates the model.
 
         Args:
@@ -27,64 +28,114 @@ class YoloV3:
                 data_format = 'channels_first'
             else:
                 data_format = 'channels_last'
-
-        self.n_classes = n_classes
-        self.model_size = model_size
-        self.max_output_size = max_output_size
-        self.iou_threshold = iou_threshold
-        self.confidence_threshold = confidence_threshold
+        self.classes = utils.read_class_names(cfg.YOLO.CLASSES)
+        self.n_classes = len(self.classes)
+        self.model_size = cfg.YOLO.MODEL_SIZE
+        self.max_output_size = cfg.YOLO.max_output_size
+        self.iou_threshold = cfg.YOLO.iou_threshold
+        self.confidence_threshold = cfg.YOLO.confidence_threshold
         self.data_format = data_format
 
-    def __call__(self, inputs, training):
-        with tf.variable_scope('yolo_v3_model'):
-            if self.data_format == 'channels_first':
-                inputs = tf.transpose(inputs, [0, 3, 1, 2])
+        if self.data_format == 'channels_first':
+            inputs = tf.transpose(inputs, [0, 3, 1, 2])
 
-            # normalize values to range [0..1]
-            inputs = inputs / 255
+        with tf.name_scope('detection_layers'):
+            self.detection1, self.detection2, self.detection3, self.conv_lbbox, self.conv_mbbox, self.conv_sbbox \
+                = self.build_model(inputs, training)
 
-            route1, route2, inputs = darknet53(inputs=inputs, training=training, data_format=self.data_format)
-            route, inputs = yolo_conv_block(inputs=inputs, filters=512, training=training, data_format=self.data_format)
-            detection1 = yolo_detection_layer(inputs, n_classes=self.n_classes, anchors=_ANCHORS[6:9],
-                                              img_size=self.model_size,
-                                              data_format=self.data_format)
-            inputs = con2d_fixed_padding(route, filters=256, kernel_size=1, data_format=self.data_format)
-            inputs = batch_norm(inputs, training=training,
-                                data_format=self.data_format)
-            inputs = tf.nn.leaky_relu(inputs, alpha=_LEAKY_RELU)
-            upsample_output_size = tf.shape(route2).get_shape().as_list()
-            inputs = upsample(inputs, out_shape=upsample_output_size, data_format=self.data_format)
+        detection_list = [self.detection1, self.detection2, self.detection3]
 
-            # get the channel axis
-            axis = 1 if self.data_format == 'channels_first' else 3
-            inputs = tf.concat(inputs, route2, axis=axis)
+        """ make a predict function later"""
+        self.boxes_dict = non_max_suppression(detection_list, n_classes=self.n_classes,
+                                              max_output_size=self.max_output_size,
+                                              confidence_threshold=self.confidence_threshold,
+                                              iou_thresould=self.iou_threshold)
 
-            route, inputs = yolo_conv_block(inputs, filters=256, training=training, data_format=self.data_format)
-            detection2 = yolo_detection_layer(inputs, n_classes=self.n_classes, anchors=_ANCHORS[3:6],
-                                              img_size=self.model_size,
-                                              data_format=self.data_format)
-            inputs = con2d_fixed_padding(route, filters=128, kernel_size=1, data_format=self.data_format)
-            inputs = batch_norm(inputs, training=training,
-                                data_format=self.data_format)
-            inputs = tf.nn.leaky_relu(inputs, alpha=_LEAKY_RELU)
-            upsample_output_size = tf.shape(route1).get_shape().as_list()
-            inputs = upsample(inputs, out_shape=upsample_output_size, data_format=self.data_format)
-            inputs = tf.concat(inputs, route1, axis=axis)
+    def build_model(self, inputs, training):
+        if self.data_format == 'channels_first':
+            inputs = tf.transpose(inputs, [0, 3, 1, 2])
 
-            route, inputs = yolo_conv_block(inputs, filters=128, training=training, data_format=self.data_format)
-            detection3 = yolo_detection_layer(inputs, n_classes=self.n_classes, anchors=_ANCHORS[0:3],
-                                              img_size=self.model_size,
-                                              data_format=self.data_format)
+        # normalize values to range [0..1]
+        inputs = inputs / 255
 
-            inputs = tf.concat([detection1, detection2, detection3], axis=1)
+        route1, route2, inputs = darknet53(inputs=inputs, training=training, data_format=self.data_format)
+        route, inputs = yolo_conv_block(inputs=inputs, filters=512, training=training, data_format=self.data_format)
+        detection1, conv_lbbox = yolo_detection_layer(inputs, n_classes=self.n_classes, anchors=cfg.YOLO.ANCHORS[6:9],
+                                                      img_size=self.model_size,
+                                                      data_format=self.data_format)
 
-            inputs = build_boxes(inputs)
+        inputs = con2d_fixed_padding(route, filters=256, kernel_size=1, data_format=self.data_format)
+        inputs = batch_norm(inputs, training=training,
+                            data_format=self.data_format)
+        inputs = tf.nn.leaky_relu(inputs, alpha=cfg.YOLO.LEAKY_RELU)
+        upsample_output_size = route2.get_shape().as_list()
+        inputs = upsample(inputs, out_shape=upsample_output_size, data_format=self.data_format)
 
-            boxes_dict = non_max_suppression(inputs, n_classes=self.n_classes, max_output_size=self.max_output_size,
-                                             confidence_threshold=self.confidence_threshold,
-                                             iou_thresould=self.iou_threshold)
+        # get the channel axis
+        axis = 1 if self.data_format == 'channels_first' else 3
+        inputs = tf.concat((inputs, route2), axis=axis)
+
+        route, inputs = yolo_conv_block(inputs, filters=256, training=training, data_format=self.data_format)
+        detection2, conv_mbbox = yolo_detection_layer(inputs, n_classes=self.n_classes, anchors=cfg.YOLO.ANCHORS[3:6],
+                                                      img_size=self.model_size,
+                                                      data_format=self.data_format)
+        inputs = con2d_fixed_padding(route, filters=128, kernel_size=1, data_format=self.data_format)
+        inputs = batch_norm(inputs, training=training,
+                            data_format=self.data_format)
+        inputs = tf.nn.leaky_relu(inputs, alpha=cfg.YOLO.LEAKY_RELU)
+        upsample_output_size = route1.get_shape().as_list()
+        inputs = upsample(inputs, out_shape=upsample_output_size, data_format=self.data_format)
+        inputs = tf.concat((inputs, route1), axis=axis)
+
+        route, inputs = yolo_conv_block(inputs, filters=128, training=training, data_format=self.data_format)
+        detection3, conv_sbbox = yolo_detection_layer(inputs, n_classes=self.n_classes, anchors=cfg.YOLO.ANCHORS[0:3],
+                                                      img_size=self.model_size,
+                                                      data_format=self.data_format)
+        # print("detection1.shape: ", detection1.shape)
+
+        detection1 = build_boxes(detection1)
+        detection2 = build_boxes(detection2)
+        detection3 = build_boxes(detection3)
+
+        return detection1, detection2, detection3, conv_lbbox, conv_mbbox, conv_sbbox
+
+    def compute_loss(self, label_sbbox, label_mbbox, label_lbbox, true_sbbox, true_mbbox, true_lbbox):
+        with tf.name_scope('small_box_loss'):
+            sbbox_loss = loss_layer(conv=self.conv_sbbox, pred=self.detection3, label=label_sbbox, bboxes=true_sbbox,
+                                    stride=cfg.YOLO.STRIDES[0])
+
+        with tf.name_scope('medium_box_loss'):
+            mbbox_loss = loss_layer(conv=self.conv_mbbox, pred=self.detection2, label=label_mbbox, bboxes=true_mbbox,
+                                    stride=cfg.YOLO.STRIDES[1])
+
+        with tf.name_scope('large_box_loss'):
+            lbbox_loss = loss_layer(conv=self.conv_lbbox, pred=self.detection1, label=label_lbbox, bboxes=true_lbbox,
+                                    stride=cfg.YOLO.STRIDES[2])
+
+        with tf.name_scope('giou_loss'):
+            giou_loss = sbbox_loss[0] + mbbox_loss[0] + lbbox_loss[0]
+
+        with tf.name_scope('giou_loss'):
+            conf_loss = sbbox_loss[1] + mbbox_loss[1] + lbbox_loss[1]
+
+        with tf.name_scope('giou_loss'):
+            prob_loss = sbbox_loss[2] + mbbox_loss[2] + lbbox_loss[2]
+
+        return giou_loss, conf_loss, prob_loss
 
 
-model = tf.keras.Model(YoloV3(2, _MODEL_SIZE, max_output_size, iou_threshold, threshold))
-dot_img_file = '/tmp/model_1.png'
-tf.keras.utils.plot_model(model, to_file=dot_img_file, show_shapes=True)
+# inputs_test = tf.placeholder(tf.float32, [1, 512, 512, 5])
+# model = YoloV3(inputs_test, False)
+
+# print("finished!")
+# bboxes_xywh = [np.zeros((3, 4)) for _ in range(3)]
+# print("np.zeros((3, 4))\n", np.zeros((3, 4)))
+# print("bboxes_xywh\n", bboxes_xywh)
+
+# bbox_count = np.zeros((3))
+# print("bbox_count: ", bbox_count)
+
+
+
+
+
