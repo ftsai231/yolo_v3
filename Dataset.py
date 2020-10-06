@@ -1,5 +1,4 @@
 import json
-import random
 
 import cv2
 
@@ -23,7 +22,8 @@ class Dataset(object):
         self.max_bbox_per_scale = 150
 
         self.annotations = self.load_annotations()
-        self.img_id_list = self.load_car_person_list()[:15000] if dataset_type == 'train' else self.load_car_person_list()[15000:]
+        self.img_id_list = self.load_car_person_list()[
+                           :1000] if dataset_type == 'train' else self.load_car_person_list()[1000:1200]
         self.num_samples = len(self.img_id_list)
         self.num_batches = int(np.ceil(self.num_samples / self.batch_size))
         self.batch_count = 0
@@ -90,8 +90,8 @@ class Dataset(object):
 
         for i in range(0, len(id_str)):
             id_str[i] = int(id_str[i])
-
-        np.random.shuffle(id_str)
+        print(type(id_str))
+        print(id_str)
         return id_str
 
     def parse_annotations(self, annotation, id):
@@ -106,11 +106,18 @@ class Dataset(object):
                 w = ann['bbox'][2]
                 h = ann['bbox'][3]
                 c = ann['category_id']
+                if c != 1 and c != 3:
+                    continue
+                elif c == 1:
+                    c = 0
+                else:
+                    c = 1
                 x, y, w, h = int(x), int(y), int(w), int(h)
                 bboxes.append([x, y, w, h, c])
                 # print([x, y, w, h, c])
 
         bboxes = np.array(bboxes)
+        # print("bboxes.shape Dataset: ", bboxes.shape)
         # print("bboxes:\n", bboxes)
         image, bboxes = utils.image_preporcess(image, [self.train_input_size, self.train_input_size],
                                                np.copy(bboxes))
@@ -193,9 +200,8 @@ class Dataset(object):
     def __len__(self):
         return self.num_batches
 
-
-
-# dataset = Dataset('train')
-# dataset.__next__()
+# if __name__ == "__main__":
+#     dataset = Dataset('train')
+#     dataset.__next__()
 # dataset.parse_annotations(dataset.annotations)
 # print(dataset.img_id)

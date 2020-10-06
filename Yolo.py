@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 from config import cfg
 import utils as utils
@@ -43,13 +44,23 @@ class YoloV3:
             self.detection1, self.detection2, self.detection3, self.conv_lbbox, self.conv_mbbox, self.conv_sbbox \
                 = self.build_model(inputs, training)
 
+        # print(self.detection1.shape)
+        # print(self.detection1)
+        # box1 = np.reshape(self.detection1, (-1, 5 + self.n_classes))
+        # box1.reshape((-1, 5 + self.n_classes))
+        # print(box1.shape)
+
+        # pred_bbox = np.concatenate([np.reshape(box1, (-1, 5 + self.n_classes)),
+        #                             np.reshape(box2, (-1, 5 + self.n_classes)),
+        #                             np.reshape(box3, (-1, 5 + self.n_classes))], axis=0)
         detection_list = [self.detection1, self.detection2, self.detection3]
 
         """ make a predict function later"""
-        self.boxes_dict = non_max_suppression(detection_list, n_classes=self.n_classes,
+        self.boxes_dicts = non_max_suppression(detection_list, n_classes=self.n_classes,
                                               max_output_size=self.max_output_size,
                                               confidence_threshold=self.confidence_threshold,
-                                              iou_thresould=self.iou_threshold)
+                                              iou_threshold=self.iou_threshold)
+        # print("self.boxes_dict: ", self.boxes_dict)
 
     def build_model(self, inputs, training):
         if self.data_format == 'channels_first':
@@ -91,7 +102,6 @@ class YoloV3:
         detection3, conv_sbbox = yolo_detection_layer(inputs, n_classes=self.n_classes, anchors=cfg.YOLO.ANCHORS[0:3],
                                                       img_size=self.model_size,
                                                       data_format=self.data_format)
-        # print("detection1.shape: ", detection1.shape)
 
         detection1 = build_boxes(detection1)
         detection2 = build_boxes(detection2)
@@ -124,16 +134,12 @@ class YoloV3:
         return giou_loss, conf_loss, prob_loss
 
 
-# inputs_test = tf.placeholder(tf.float32, [1, 512, 512, 5])
-# model = YoloV3(inputs_test, False)
+if __name__ == "__main__":
+    inputs_test = tf.placeholder(tf.float32, [3, 416, 416, 3])
+    # inputs_test = np.zeros((3, 416, 416, 3))
+    model = YoloV3(inputs_test, False)
 
-# print("finished!")
-# bboxes_xywh = [np.zeros((3, 4)) for _ in range(3)]
-# print("np.zeros((3, 4))\n", np.zeros((3, 4)))
-# print("bboxes_xywh\n", bboxes_xywh)
 
-# bbox_count = np.zeros((3))
-# print("bbox_count: ", bbox_count)
 
 
 

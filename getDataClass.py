@@ -1,13 +1,6 @@
-import os
-import pickle
-from shutil import copyfile
-
-import scipy.misc
+import numpy as np
 from pycocotools.coco import COCO
 from config import cfg
-from PIL import Image
-import urllib.request
-import requests
 
 
 coco = COCO(cfg.TRAIN.ANNOT_PATH)
@@ -32,7 +25,6 @@ print("car_and_person:", len(car_and_person))
 #     output.write(str(car_and_person).strip("[]"))
 
 
-
 # TODO: saving the photos. DO NOT DELETE THE COMMENTED CODE!
 # arr = os.listdir('/Users/JTSAI1/Documents/ADAI/train2014')
 # dst = '/Users/JTSAI1/Documents/ADAI/train_car_person/'
@@ -48,3 +40,23 @@ print("car_and_person:", len(car_and_person))
 #     with open(dst + str(id) + '.jpg', 'wb') as handler:
 #         handler.write(img_data)
 #         print("copyied")
+
+# TODO: do the shuffle for car and person list
+# def load_car_person_list():
+#     open_file = open('car_and_person.txt').read()
+#     id_str = ""
+#     for line in open_file:
+#         id_str += line
+#
+#     id_str = id_str.strip("[]").split(", ")
+#
+#     for i in range(0, len(id_str)):
+#         id_str[i] = int(id_str[i])
+#
+#     np.random.shuffle(id_str)
+#     # print(id_str)
+#     with open('car_and_person.txt', 'w') as output:
+#         output.write(str(id_str).strip("[]"))
+#     return id_str
+
+

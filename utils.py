@@ -1,8 +1,10 @@
 import cv2
-import random
-import colorsys
 import numpy as np
 import tensorflow as tf
+from PIL import Image, ImageDraw, ImageFont
+# from IPython.display import display
+from seaborn import color_palette
+
 from config import cfg
 
 
@@ -17,6 +19,7 @@ def read_class_names(class_file_name):
         # 获取类名和下标，用于数值和类之间的转换
         for ID, name in enumerate(data):
             names[ID] = name.strip('\n')
+    print(names)
     return names
 
 
@@ -63,119 +66,59 @@ def read_data_line(file_path):
     return data_line_list
 
 
-# 图像预处理
-def image_preporcess(image, target_size, gt_boxes=None):
-    """
-    :param image: 图像信息
-    :param target_size: 目标尺寸
-    :param gt_boxes: ground truth
-    :return:
-    """
-    # 颜色空间转换
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
-
-    # 目标边长 比如 416 x 416
-    ih, iw = target_size
-    # 图像的真实边长 比如 632 x 900
-    h, w, _ = image.shape
-
-    # 将图像resize 成 最大边 为目标的边长，另一个边小于或等于目标边长
-    # 以保障最大的边没超出对应的边长。
-    # 通过上面的比如值，计算得到 0.4622222222222222
-    scale = min(iw / w, ih / h)
-    # 得到新的边长为 416
-    nw = int(scale * w)
-    # 得到新的边长为 292
-    nh = int(scale * h)
-    # 将上面的真实图像 resize 到 416 x 292 大小
-    image_resized = cv2.resize(image, (nw, nh))
-
-    # 创建一张 416 x 416 大小的三通道图，并全部填充 128 值
-    image_paded = np.full(shape=[ih, iw, 3], fill_value=128.0)
-    # 为了将上面的 resize 的真实图像放置在 目标图像 416 x 416 大小的中间
-    # 必须先根据 resize 的真实图像的边长，计算出与 目标图像 边长的差距
-    # 然后这些差距 除以 2，就在 目标图像 416 x 416 的中间了
-    # 根据上面的比如值 计算得 0
-    dw = (iw - nw) // 2
-    # 根据上面的比如值 计算得 62
-    dh = (ih - nh) // 2
-    # 将 resize 值放置 目标图像中间
-    # 比如值得 [62: 292 + 62, 0: 416 + 0, :]
-    # 这样，得到的图像 3 个通道中，h 上面和下面分别有 62 个格子是空白的
-    # 确保了真实图像放缩到了目标图像的中间位置。这一步对卷积提取特征非常重要。
-    image_paded[dh: nh + dh, dw: nw + dw, :] = image_resized
-    # 对得到的图像进行归一化处理
-    image_paded = image_paded / 255.
-
-    if gt_boxes is None:
-        return image_paded
-
-    else:
-        # 真实图像进行了缩放，ground truth 也相对的进行 缩放映射
-        gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]] * scale + dw
-        gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
-        return image_paded, gt_boxes
-
-
 # 打框
-def draw_bbox(image, bboxes, classes=None, show_label=True):
+def draw_boxes(img_names, boxes_dicts, class_names, model_size):
+    """Draws detected boxes.
+
+    Args:
+        img_names: A list of input images names.
+        boxes_dict: A class-to-boxes dictionary.
+        class_names: A class names list.
+        model_size: The input size of the model.
+
+    Returns:
+        None.
     """
-    :param image:
-    :param bboxes: [x_min, y_min, x_max, y_max, probability, cls_id] format coordinates.
-    :param classes: index and class dic
-    :param show_label:
-    :return:
-    """
-    # 获取 class 的 index 和 name
-    if classes is None:
-        classes = read_class_names(cfg.COMMON.CLASS_FILE_PATH)
-        pass
+    colors = ((np.array(color_palette("hls", 2)) * 255)).astype(np.uint8)
+    for num, img_name, boxes_dict in zip(range(len(img_names)), img_names,
+                                         boxes_dicts):
+        img = Image.open(img_name)
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype(font='./futura/futur.ttf',
+                                  size=(img.size[0] + img.size[1]) // 100)
+        resize_factor = \
+            (img.size[0] / model_size[0], img.size[1] / model_size[1])
+        for cls in range(len(class_names)):
+            print("cls: ", cls)
+            print("boxes_dict in utils: ", boxes_dict)
+            print("boxes_dict length: ", len(boxes_dict))
+            for i in range(3):
+                boxes = boxes_dict[i][cls]
+                # print("boxes: ", boxes)
+                if np.size(boxes) != 0:
+                    color = colors[cls]
+                    for box in boxes:
+                        print("box: ", box)
+                        xy, confidence = box[:4], box[4]
+                        xy = [xy[i] * resize_factor[i % 2] for i in range(4)]
+                        x0, y0 = xy[0], xy[1]
+                        thickness = (img.size[0] + img.size[1]) // 200
+                        for t in np.linspace(0, 1, thickness):
+                            xy[0], xy[1] = xy[0] + t, xy[1] + t
+                            xy[2], xy[3] = xy[2] - t, xy[3] - t
+                            draw.rectangle(xy, outline=tuple(color))
+                        text = '{} {:.1f}%'.format(class_names[cls],
+                                                   confidence * 100)
+                        text_size = draw.textsize(text, font=font)
+                        draw.rectangle(
+                            [x0, y0 - text_size[1], x0 + text_size[0], y0],
+                            fill=tuple(color))
+                        draw.text((x0, y0 - text_size[1]), text, fill='black',
+                                  font=font)
 
-    class_num = len(classes)
-    image_h, image_w, _ = image.shape
-
-    # 生成 与 类别数量的 3 通道 hsv 颜色元组
-    hsv_tuples = [(1.0 * x / class_num, 1., 1.) for x in range(class_num)]
-    # 颜色空间变换，将 hsv 转 rgb
-    colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
-    # 将归一化的颜色值还原到 0~255 之间
-    colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), colors))
-
-    # 设置随机种子
-    random.seed(32)
-    # 打框颜色 洗牌
-    random.shuffle(colors)
-    random.seed(None)
-
-    for i, bbox in enumerate(bboxes):
-        # 获取 bbox 的坐标值
-        coor = np.array(bbox[:4], dtype=np.int32)
-        font_scale = 0.5
-        # 获取得分
-        score = bbox[4]
-        # 获取类别的 index
-        class_ind = int(bbox[5])
-        # 根据类别的 index 获取 bbox 打框的颜色
-        bbox_color = colors[class_ind]
-        # bbox 打框 的线条宽度
-        bbox_thick = int(0.6 * (image_h + image_w) / 600)
-        # 获取左上角和右下角坐标
-        c1 = (coor[0], coor[1])
-        c2 = (coor[2], coor[3])
-        # 打框
-        cv2.rectangle(image, c1, c2, bbox_color, bbox_thick)
-
-        # 对 label 进行打框标注
-        if show_label:
-            # 根据 index 获取 class 的名字
-            bbox_mess = '%s: %.2f' % (classes[class_ind], score)
-            t_size = cv2.getTextSize(bbox_mess, 0, font_scale, thickness=bbox_thick // 2)[0]
-            cv2.rectangle(image, c1, (c1[0] + t_size[0], c1[1] - t_size[1] - 3), bbox_color, -1)  # filled
-
-            cv2.putText(image, bbox_mess, (c1[0], c1[1] - 2), cv2.FONT_HERSHEY_SIMPLEX,
-                        font_scale, (0, 0, 0), bbox_thick // 2, lineType=cv2.LINE_AA)
-
-    return image
+        # display(img)
+        img.save('test.jpg')
+        print('image saved!')
 
 
 # (x, y, w, h) --> (xmin, ymin, xmax, ymax)
@@ -227,18 +170,6 @@ def bbox_iou(boxes1, boxes2):
     return ious
 
 
-# 获取 .pb 模型
-def read_pb_return_tensors(graph, pb_file, return_elements):
-    with tf.gfile.FastGFile(pb_file, 'rb') as f:
-        frozen_graph_def = tf.GraphDef()
-        frozen_graph_def.ParseFromString(f.read())
-
-    with graph.as_default():
-        return_elements = tf.import_graph_def(frozen_graph_def,
-                                              return_elements=return_elements)
-    return return_elements
-
-
 # 非极大值抑制
 def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
     """
@@ -277,7 +208,7 @@ def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
             # 将概率最大的那个 bbox 移除后 剩下的 bboxes
             cls_bboxes = np.concatenate([cls_bboxes[: max_ind], cls_bboxes[max_ind + 1:]])
             # 计算 best bbox 与剩下的 bbox 之间的 iou
-            iou = bboxes_iou(best_bbox[np.newaxis, :4], cls_bboxes[:, :4])
+            iou = bbox_iou(best_bbox[np.newaxis, :4], cls_bboxes[:, :4])
             # 构建一个 长度为 len(iou) 的 list，并填充 1 值
             weight = np.ones((len(iou),), dtype=np.float32)
 
@@ -371,19 +302,19 @@ def image_preporcess(image, target_size, gt_boxes=None):
     image = image.astype(np.float32)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    ih, iw    = target_size
-    h,  w, _  = image.shape
+    ih, iw = target_size
+    h, w, _ = image.shape
 
     # print("ih, iw:", ih, iw)
     # print("h,  w: ", h,  w )
 
-    scale = min(iw/w, ih/h)
-    nw, nh  = int(scale * w), int(scale * h)
+    scale = min(iw / w, ih / h)
+    nw, nh = int(scale * w), int(scale * h)
     image_resized = cv2.resize(image, (nw, nh))
 
     image_paded = np.full(shape=[ih, iw, 3], fill_value=128.0)
-    dw, dh = (iw - nw) // 2, (ih-nh) // 2
-    image_paded[dh:nh+dh, dw:nw+dw, :] = image_resized
+    dw, dh = (iw - nw) // 2, (ih - nh) // 2
+    image_paded[dh:nh + dh, dw:nw + dw, :] = image_resized
     image_paded = image_paded / 255.
 
     if gt_boxes is None:
@@ -393,3 +324,20 @@ def image_preporcess(image, target_size, gt_boxes=None):
         gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]] * scale + dw
         gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
         return image_paded, gt_boxes
+
+
+def build_boxes(inputs):
+    """Computes top left and bottom right points of the boxes."""
+    center_x, center_y, width, height, confidence, classes = \
+        tf.split(inputs, [1, 1, 1, 1, 1, -1], axis=-1)
+
+    top_left_x = center_x - width / 2
+    top_left_y = center_y - height / 2
+    bottom_right_x = center_x + width / 2
+    bottom_right_y = center_y + height / 2
+
+    boxes = tf.concat([top_left_x, top_left_y,
+                       bottom_right_x, bottom_right_y,
+                       confidence, classes], axis=-1)
+
+    return boxes

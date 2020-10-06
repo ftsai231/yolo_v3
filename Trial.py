@@ -1,17 +1,18 @@
 import numpy as np
+import tensorflow as tf
+import cv2
 
+import utils as utils
 
-str = "263,211,324,339,8 165,264,253,372,8 241,194,295,299,8"
-line = str.split()
-bboxes = np.array([list(map(lambda x: int(float(x)), box.split(','))) for box in line[0:]])
-print(bboxes)
-print(bboxes.shape)
+# image_path = '/Users/JTSAI1/Documents/ADAI/train_car_person/' + str(141003) + '.jpg'
+# image = np.array(cv2.imread(image_path))
+# image = np.copy(image)
+# image_data = utils.image_preporcess(image, [416, 416])
+#
+# print(image_data.shape)
+arr = [1,2,1,2,0,2,3,4,3,2,1,3]
+arr = np.array(arr)
+print(arr)
 
-list = []
-a = [1, 2]
-b = [3, 4]
-list.append(a)
-list.append(b)
-list = np.array(list)
-print(list)
-print(list.shape)
+boxes = tf.boolean_mask(arr, arr > 1)
+print(boxes)

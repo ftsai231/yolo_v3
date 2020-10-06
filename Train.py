@@ -23,7 +23,7 @@ class YoloTrain(object):
         self.warmup_epoch = cfg.TRAIN.WARMUP_EPOCHS
         self.epoch = cfg.TRAIN.EPOCH
 
-        self.initial_weight = cfg.TRAIN.INITIAL_WEIGHT
+        # self.initial_weight = cfg.TRAIN.INITIAL_WEIGHT
         self.time = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time()))
         self.moving_ave_decay = cfg.YOLO.MOVING_AVE_DECAY
         self.max_bbox_per_scale = 150
@@ -110,13 +110,10 @@ class YoloTrain(object):
     def train(self):
         print("Ready to train!")
         self.sess.run(tf.global_variables_initializer())
-        try:
-            print('=> Restoring weights from: %s ... ' % self.initial_weight)
-            self.loader.restore(self.sess, tf.train.latest_checkpoint("./checkpoint/"))
-        except:
-            print('=> %s does not exist !' % self.initial_weight)
-            print('=> Now it starts to train YOLOV3 from scratch ...')
-            # self.epoch = 0
+        # try:
+        # print('=> Restoring weights...')
+        # self.loader.restore(self.sess, './checkpoint/train_checkpoint/yolov3_model.ckpt-1')
+        # print("loaded pretrained model successfully!")
         print('=> Now it starts to train YOLOV3 ...')
         for epoch in range(self.epoch):
             print("epoch number: ", epoch)
@@ -139,8 +136,9 @@ class YoloTrain(object):
                 print("train_step_loss: ", train_step_loss)
                 pbar.set_description("train loss: %.2f" % train_step_loss)
 
-            ckpt_file_train_checkpoint = "./checkpoint/train_checkpoint/yolov3_checkpoint_epoch=%.ckpt" %epoch
-            self.saver.save(self.sess, ckpt_file_train_checkpoint, global_step=self.global_step)
+            ckpt_file = "./checkpoint/train_checkpoint/yolov3_model-1.ckpt"
+            log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+            self.saver.save(self.sess, ckpt_file, global_step=self.global_step)
 
             for test_data in self.testset:
                 test_step_loss = self.sess.run(self.loss, feed_dict={
@@ -166,6 +164,4 @@ class YoloTrain(object):
 
 
 if __name__ == "__main__":
-    # yoloTrain = YoloTrain()
-    # yoloTrain.train()
     YoloTrain().train()
