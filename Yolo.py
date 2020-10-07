@@ -44,15 +44,6 @@ class YoloV3:
             self.detection1, self.detection2, self.detection3, self.conv_lbbox, self.conv_mbbox, self.conv_sbbox \
                 = self.build_model(inputs, training)
 
-        # print(self.detection1.shape)
-        # print(self.detection1)
-        # box1 = np.reshape(self.detection1, (-1, 5 + self.n_classes))
-        # box1.reshape((-1, 5 + self.n_classes))
-        # print(box1.shape)
-
-        # pred_bbox = np.concatenate([np.reshape(box1, (-1, 5 + self.n_classes)),
-        #                             np.reshape(box2, (-1, 5 + self.n_classes)),
-        #                             np.reshape(box3, (-1, 5 + self.n_classes))], axis=0)
         detection_list = [self.detection1, self.detection2, self.detection3]
 
         """ make a predict function later"""
@@ -60,7 +51,6 @@ class YoloV3:
                                               max_output_size=self.max_output_size,
                                               confidence_threshold=self.confidence_threshold,
                                               iou_threshold=self.iou_threshold)
-        # print("self.boxes_dict: ", self.boxes_dict)
 
     def build_model(self, inputs, training):
         if self.data_format == 'channels_first':
@@ -134,10 +124,10 @@ class YoloV3:
         return giou_loss, conf_loss, prob_loss
 
 
-if __name__ == "__main__":
-    inputs_test = tf.placeholder(tf.float32, [3, 416, 416, 3])
-    # inputs_test = np.zeros((3, 416, 416, 3))
-    model = YoloV3(inputs_test, False)
+# if __name__ == "__main__":
+#     inputs_test = tf.placeholder(tf.float32, [3, 416, 416, 3])
+#     # inputs_test = np.zeros((3, 416, 416, 3))
+#     model = YoloV3(inputs_test, False)
 
 
 

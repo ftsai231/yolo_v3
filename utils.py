@@ -19,7 +19,6 @@ def read_class_names(class_file_name):
         # 获取类名和下标，用于数值和类之间的转换
         for ID, name in enumerate(data):
             names[ID] = name.strip('\n')
-    print(names)
     return names
 
 
@@ -89,16 +88,15 @@ def draw_boxes(img_names, boxes_dicts, class_names, model_size):
         resize_factor = \
             (img.size[0] / model_size[0], img.size[1] / model_size[1])
         for cls in range(len(class_names)):
-            print("cls: ", cls)
-            print("boxes_dict in utils: ", boxes_dict)
-            print("boxes_dict length: ", len(boxes_dict))
+            # print("cls: ", cls)
+            # print("boxes_dict in utils: ", boxes_dict)
+            # print("boxes_dict length: ", len(boxes_dict))
             for i in range(3):
                 boxes = boxes_dict[i][cls]
                 # print("boxes: ", boxes)
                 if np.size(boxes) != 0:
                     color = colors[cls]
                     for box in boxes:
-                        print("box: ", box)
                         xy, confidence = box[:4], box[4]
                         xy = [xy[i] * resize_factor[i % 2] for i in range(4)]
                         x0, y0 = xy[0], xy[1]
@@ -298,15 +296,12 @@ def get_anchors():
     return anchors.reshape((3, 3, 2))
 
 
-def image_preporcess(image, target_size, gt_boxes=None):
+def image_preprocess(image, target_size, gt_boxes=None):
     image = image.astype(np.float32)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     ih, iw = target_size
     h, w, _ = image.shape
-
-    # print("ih, iw:", ih, iw)
-    # print("h,  w: ", h,  w )
 
     scale = min(iw / w, ih / h)
     nw, nh = int(scale * w), int(scale * h)
@@ -315,7 +310,7 @@ def image_preporcess(image, target_size, gt_boxes=None):
     image_paded = np.full(shape=[ih, iw, 3], fill_value=128.0)
     dw, dh = (iw - nw) // 2, (ih - nh) // 2
     image_paded[dh:nh + dh, dw:nw + dw, :] = image_resized
-    image_paded = image_paded / 255.
+    image_paded = image_paded / 255
 
     if gt_boxes is None:
         return image_paded
@@ -325,19 +320,3 @@ def image_preporcess(image, target_size, gt_boxes=None):
         gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
         return image_paded, gt_boxes
 
-
-def build_boxes(inputs):
-    """Computes top left and bottom right points of the boxes."""
-    center_x, center_y, width, height, confidence, classes = \
-        tf.split(inputs, [1, 1, 1, 1, 1, -1], axis=-1)
-
-    top_left_x = center_x - width / 2
-    top_left_y = center_y - height / 2
-    bottom_right_x = center_x + width / 2
-    bottom_right_y = center_y + height / 2
-
-    boxes = tf.concat([top_left_x, top_left_y,
-                       bottom_right_x, bottom_right_y,
-                       confidence, classes], axis=-1)
-
-    return boxes

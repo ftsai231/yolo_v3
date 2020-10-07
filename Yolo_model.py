@@ -220,49 +220,6 @@ def build_boxes(inputs):
     return boxes
 
 
-# Performs non-max suppression separately for each class.
-# def non_max_suppression(detection_list, n_classes, max_output_size, confidence_threshold, iou_thresould):
-#     # batch = tf.unstack(inputs)
-#     boxes_dicts = []
-#     detection_list_shape = len(detection_list)
-#     for i in range(detection_list_shape):
-#         batch = tf.unstack(detection_list[i])
-#         print("batch.shape: \n", batch)
-#         # for boxes in batch:
-#         # the 4th place is the confidence score
-#         # print("boxes: ", boxes)
-#         boxes = np.array(batch)[0]
-#         print(boxes[0])
-#
-#         boxes = tf.boolean_mask(boxes, boxes[:, :, :, 4] > confidence_threshold)
-#         # get the classes
-#         classes = tf.argmax(boxes[:, 5:], axis=-1)
-#         # add one more dim in classes
-#         classes = tf.expand_dims(tf.to_float(classes), axis=-1)
-#         # add the result in the last dim in the box
-#         boxes = tf.concat([boxes[:, :5], classes], axis=-1)
-#
-#         boxes_dict = dict()
-#         for cls in range(n_classes):
-#             mask = tf.equal(boxes[:, 5], cls)
-#             mask_shape = mask.get_shape()
-#             if mask_shape.ndims != 0:
-#                 class_boxes = tf.boolean_mask(boxes, mask)
-#                 boxes_coords, boxes_conf_scores, _ = tf.split(class_boxes,
-#                                                               [4, 1, -1],
-#                                                               axis=-1)
-#                 boxes_conf_scores = tf.reshape(boxes_conf_scores, [-1])
-#                 indices = tf.image.non_max_suppression(boxes_coords,
-#                                                        boxes_conf_scores,
-#                                                        max_output_size,
-#                                                        cfg.YOLO.iou_threshold)
-#                 class_boxes = tf.gather(class_boxes, indices)
-#                 boxes_dict[cls] = class_boxes[:, :5]
-#
-#         boxes_dicts.append(boxes_dict)
-#
-#     return boxes_dicts
-
 def non_max_suppression(detection_list, n_classes, max_output_size, confidence_threshold, iou_threshold):
     """Performs non-max suppression separately for each class.
 

@@ -20,8 +20,8 @@ __C.YOLO.ORIGINAL_WEIGHT = "./checkpoint/yolov3_coco.ckpt"
 __C.YOLO.DEMO_WEIGHT = "./checkpoint/yolov3_coco_demo.ckpt"
 
 # original
-__C.YOLO.confidence_threshold = 0.5  # confidence score threshold
-__C.YOLO.iou_threshold = 0.5
+__C.YOLO.confidence_threshold = 0.3  # confidence score threshold
+__C.YOLO.iou_threshold = 0.3
 __C.YOLO.max_output_size = 5
 
 __C.YOLO.BATCH_NORM_DECAY = 0.9
@@ -36,11 +36,11 @@ __C.YOLO.MODEL_SIZE = (416, 416)
 __C.TRAIN = edict()
 
 __C.TRAIN.ANNOT_PATH = "./cocoapi/annotations/instances_train2014.json"
-__C.TRAIN.BATCH_SIZE = 50
+__C.TRAIN.BATCH_SIZE = 32
 # __C.TRAIN.INPUT_SIZE = [320, 352, 384, 416, 448, 480, 512, 544, 576, 608]
 __C.TRAIN.INPUT_SIZE = 416
 __C.TRAIN.DATA_AUG = True
-__C.TRAIN.LEARN_RATE_INIT = 2e-4
+__C.TRAIN.LEARN_RATE_INIT = 1e-4
 __C.TRAIN.LEARN_RATE_END = 1e-6
 __C.TRAIN.WARMUP_EPOCHS = 2
 __C.TRAIN.FISRT_STAGE_EPOCHS = 20
@@ -53,7 +53,7 @@ __C.TRAIN.N_CLASSES = 2
 __C.TEST = edict()
 
 __C.TEST.ANNOT_PATH = "./cocoapi/annotations/image_info_test2014.json"
-__C.TEST.BATCH_SIZE = 50
+__C.TEST.BATCH_SIZE = 32
 __C.TEST.INPUT_SIZE = 544
 __C.TEST.DATA_AUG = False
 __C.TEST.WRITE_IMAGE = True

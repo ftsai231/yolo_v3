@@ -17,7 +17,7 @@ class YoloPredict(object):
 
         with tf.name_scope('input'):
             self.input = tf.placeholder(dtype=tf.float32, shape=[1,  self.input_size, self.input_size, 3], name='input')
-            self.training = tf.placeholder(dtype=bool, name='training')
+            self.training = tf.placeholder(dtype=bool, name='trainable')
 
         model = YoloV3(inputs=self.input, training=self.training)
         self.boxes_dicts = model.boxes_dicts
@@ -29,10 +29,10 @@ class YoloPredict(object):
         self.saver.restore(self.sess, self.weights_path)
 
     def predict(self):
-        image_path = './46211.jpg'
+        image_path = './33698.jpg'
         image = np.array(cv2.imread(image_path))
         image = np.copy(image)
-        image_data = utils.image_preporcess(image, [self.input_size, self.input_size])
+        image_data = utils.image_preprocess(image, [self.input_size, self.input_size])
         image_data = image_data[np.newaxis, ...]
 
         box_dicts = self.sess.run([self.boxes_dicts], feed_dict={

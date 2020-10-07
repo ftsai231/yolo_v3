@@ -22,8 +22,7 @@ class Dataset(object):
         self.max_bbox_per_scale = 150
 
         self.annotations = self.load_annotations()
-        self.img_id_list = self.load_car_person_list()[
-                           :1000] if dataset_type == 'train' else self.load_car_person_list()[1000:1200]
+        self.img_id_list = self.load_car_person_list()[0:9000] if dataset_type == 'train' else self.load_car_person_list()[9000:10500]
         self.num_samples = len(self.img_id_list)
         self.num_batches = int(np.ceil(self.num_samples / self.batch_size))
         self.batch_count = 0
@@ -90,8 +89,8 @@ class Dataset(object):
 
         for i in range(0, len(id_str)):
             id_str[i] = int(id_str[i])
-        print(type(id_str))
-        print(id_str)
+        # print(type(id_str))
+        # print(id_str)
         return id_str
 
     def parse_annotations(self, annotation, id):
@@ -112,14 +111,15 @@ class Dataset(object):
                     c = 0
                 else:
                     c = 1
+
+                x = x + w / 2
+                y = y + h / 2
                 x, y, w, h = int(x), int(y), int(w), int(h)
                 bboxes.append([x, y, w, h, c])
                 # print([x, y, w, h, c])
 
         bboxes = np.array(bboxes)
-        # print("bboxes.shape Dataset: ", bboxes.shape)
-        # print("bboxes:\n", bboxes)
-        image, bboxes = utils.image_preporcess(image, [self.train_input_size, self.train_input_size],
+        image, bboxes = utils.image_preprocess(image, [self.train_input_size, self.train_input_size],
                                                np.copy(bboxes))
         # print("bboxes after processed:\n", bboxes)
         return image, bboxes
@@ -128,25 +128,21 @@ class Dataset(object):
 
         label = [np.zeros((self.train_output_sizes[i], self.train_output_sizes[i], self.anchor_per_scale,
                            5 + self.num_classes)) for i in range(3)]
+        # bounding boxes
         bboxes_xywh = [np.zeros((self.max_bbox_per_scale, 4)) for _ in range(3)]
         bbox_count = np.zeros((3,))
 
         for bbox in bboxes:
             bbox_coor = bbox[:4]
             bbox_class_ind = bbox[4]
-            # print("bbox_coor: ", bbox_coor)
-            # print("bbox_class_ind: ", bbox_class_ind)
 
             onehot = np.zeros(self.num_classes, dtype=np.float)
             onehot[bbox_class_ind] = 1.0
             uniform_distribution = np.full(self.num_classes, 1.0 / self.num_classes)
             deta = 0.01
             smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
-            # print("(bbox_coor[2:] + bbox_coor[:2]): ", (bbox_coor[2:] + bbox_coor[:2]))
 
             bbox_xywh = np.concatenate([(bbox_coor[2:] + bbox_coor[:2]) * 0.5, bbox_coor[2:] - bbox_coor[:2]], axis=-1)
-            # print("bbox_xywh: ", bbox_xywh)
-            # print("self.strides: ", self.strides)
 
             bbox_xywh_scaled = 1.0 * bbox_xywh[np.newaxis, :] / self.strides[:, np.newaxis]
 
@@ -180,10 +176,6 @@ class Dataset(object):
                 best_detect = int(best_anchor_ind / self.anchor_per_scale)
                 best_anchor = int(best_anchor_ind % self.anchor_per_scale)
                 xind, yind = np.floor(bbox_xywh_scaled[best_detect, 0:2]).astype(np.int32)
-
-                # print("best_detect: ", best_detect)
-                # print("xind, yind: ", xind, yind)
-                # print("best_anchor: ", best_anchor)
 
                 label[best_detect][yind, xind, best_anchor, :] = 0
                 label[best_detect][yind, xind, best_anchor, 0:4] = bbox_xywh

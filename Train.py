@@ -110,10 +110,11 @@ class YoloTrain(object):
     def train(self):
         print("Ready to train!")
         self.sess.run(tf.global_variables_initializer())
-        # try:
+
         # print('=> Restoring weights...')
-        # self.loader.restore(self.sess, './checkpoint/train_checkpoint/yolov3_model.ckpt-1')
+        # self.loader.restore(self.sess, './checkpoint/train_checkpoint/yolov3_model-1.ckpt-1')
         # print("loaded pretrained model successfully!")
+
         print('=> Now it starts to train YOLOV3 ...')
         for epoch in range(self.epoch):
             print("epoch number: ", epoch)
