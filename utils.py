@@ -1,10 +1,12 @@
+import colorsys
+import random
+
 import cv2
 import numpy as np
 import tensorflow as tf
 from PIL import Image, ImageDraw, ImageFont
 # from IPython.display import display
 from seaborn import color_palette
-
 from config import cfg
 
 
@@ -22,212 +24,77 @@ def read_class_names(class_file_name):
     return names
 
 
-# 获取 anchor
-def get_anchors(anchors_path):
-    """
-    :param anchors_path: anchor 文件路径
-    :return:
-    """
-    with open(anchors_path) as f:
-        anchors = f.readline()
-    anchors = np.array(anchors.split(','), dtype=np.float32)
-    # anchors = anchors.reshape(-1, 2)
-    anchors = anchors.reshape((3, 3, 2))
-    # print("anchors.reshape:{}".format(anchors))
-    return anchors
+# def draw_boxes(img_names, boxes_dicts, class_names, model_size):
+#     """Draws detected boxes.
+#
+#     Args:
+#         img_names: A list of input images names.
+#         boxes_dict: A class-to-boxes dictionary.
+#         class_names: A class names list.
+#         model_size: The input size of the model.
+#
+#     Returns:
+#         None.
+#     """
+#     colors = ((np.array(color_palette("hls", 2)) * 255)).astype(np.uint8)
+#     # for num, img_name, boxes_dict in zip(range(len(img_names)), img_names,
+#     #                                      boxes_dicts):
+#     img = Image.open(img_names)
+#     draw = ImageDraw.Draw(img)
+#     font = ImageFont.truetype(font='./futura/futur.ttf',
+#                               size=(img.size[0] + img.size[1]) // 100)
+#     resize_factor = \
+#         (img.size[0] / model_size[0], img.size[1] / model_size[1])
+#     # for cls in range(len(class_names)):
+#     #     boxes = boxes_dict[0][cls]
+#     #     print("boxes.shpae: ", boxes.shape)
+#     #     if np.size(boxes) != 0:
+#     # color = colors[cls]
+#     #         print("boxes: ", boxes)
+#     for box in boxes_dicts:
+#         xy, confidence = box[:4], box[4]
+#         xy = [xy[i] * resize_factor[i % 2] for i in range(4)]
+#         x0, y0 = xy[0], xy[1]
+#         thickness = (img.size[0] + img.size[1]) // 200
+#         for t in np.linspace(0, 1, thickness):
+#             xy[0], xy[1] = xy[0] + t, xy[1] + t
+#             xy[2], xy[3] = xy[2] - t, xy[3] - t
+#             draw.rectangle(xy, outline=tuple(color))
+#         text = '{} {:.1f}%'.format(class_names[cls],
+#                                    confidence * 100)
+#         text_size = draw.textsize(text, font=font)
+#         draw.rectangle(
+#             [x0, y0 - text_size[1], x0 + text_size[0], y0],
+#             fill=tuple(color))
+#         draw.text((x0, y0 - text_size[1]), text, fill='black',
+#                       font=font)
+#
+#         # display(img)
+#         img.save('test.jpg')
+#         print('image saved!')
 
 
-# 读取 image data 的路径
-def read_data_path(file_path):
-    image_path_list = []
-    with open(file_path) as file:
-        line_list = file.readlines()
-        for line_info in line_list:
-            data_info = line_info.strip()
-            image_path = data_info.split()[0]
-            image_path_list.append(image_path)
-            pass
-        pass
-
-    return image_path_list
-    pass
-
-
-# 读取数据
-def read_data_line(file_path):
-    data_line_list = []
-    with open(file_path) as file:
-        line_list = file.readlines()
-        for line_info in line_list:
-            data_info = line_info.strip().split()
-            data_line_list.append(data_info)
-
-    return data_line_list
-
-
-# 打框
-def draw_boxes(img_names, boxes_dicts, class_names, model_size):
-    """Draws detected boxes.
-
-    Args:
-        img_names: A list of input images names.
-        boxes_dict: A class-to-boxes dictionary.
-        class_names: A class names list.
-        model_size: The input size of the model.
-
-    Returns:
-        None.
-    """
-    colors = ((np.array(color_palette("hls", 2)) * 255)).astype(np.uint8)
-    for num, img_name, boxes_dict in zip(range(len(img_names)), img_names,
-                                         boxes_dicts):
-        img = Image.open(img_name)
-        draw = ImageDraw.Draw(img)
-        font = ImageFont.truetype(font='./futura/futur.ttf',
-                                  size=(img.size[0] + img.size[1]) // 100)
-        resize_factor = \
-            (img.size[0] / model_size[0], img.size[1] / model_size[1])
-        for cls in range(len(class_names)):
-            # print("cls: ", cls)
-            # print("boxes_dict in utils: ", boxes_dict)
-            # print("boxes_dict length: ", len(boxes_dict))
-            for i in range(3):
-                boxes = boxes_dict[i][cls]
-                # print("boxes: ", boxes)
-                if np.size(boxes) != 0:
-                    color = colors[cls]
-                    for box in boxes:
-                        xy, confidence = box[:4], box[4]
-                        xy = [xy[i] * resize_factor[i % 2] for i in range(4)]
-                        x0, y0 = xy[0], xy[1]
-                        thickness = (img.size[0] + img.size[1]) // 200
-                        for t in np.linspace(0, 1, thickness):
-                            xy[0], xy[1] = xy[0] + t, xy[1] + t
-                            xy[2], xy[3] = xy[2] - t, xy[3] - t
-                            draw.rectangle(xy, outline=tuple(color))
-                        text = '{} {:.1f}%'.format(class_names[cls],
-                                                   confidence * 100)
-                        text_size = draw.textsize(text, font=font)
-                        draw.rectangle(
-                            [x0, y0 - text_size[1], x0 + text_size[0], y0],
-                            fill=tuple(color))
-                        draw.text((x0, y0 - text_size[1]), text, fill='black',
-                                  font=font)
-
-        # display(img)
-        img.save('test.jpg')
-        print('image saved!')
-
-
-# (x, y, w, h) --> (xmin, ymin, xmax, ymax)
-def bbox_xywh_dxdy(boxes):
-    boxes = np.array(boxes)
-    boxes_dxdy = np.concatenate([boxes[..., :2] - boxes[..., 2:] * 0.5,
-                                 boxes[..., :2] + boxes[..., 2:] * 0.5], axis=-1)
-
-    return boxes_dxdy
-    pass
-
-
-# (xmin, ymin, xmax, ymax) --> (x, y, w, h)
-def bbox_dxdy_xywh(boxes):
-    boxes = np.array(boxes)
-    # 转换 [xmin, ymin, xmax, ymax] --> [x, y, w, h] bounding boxes 结构
-    bbox_xywh = np.concatenate([(boxes[2:] + boxes[:2]) * 0.5,
-                                boxes[2:] - boxes[:2]], axis=-1)
-
-    return bbox_xywh
-    pass
-
-
-# IOU
 def bbox_iou(boxes1, boxes2):
     boxes1 = np.array(boxes1)
     boxes2 = np.array(boxes2)
 
-    # 计算 面积
-    boxes1_area = (boxes1[..., 2] - boxes1[..., 0]) * (boxes1[..., 3] - boxes1[..., 1])
-    boxes2_area = (boxes2[..., 2] - boxes2[..., 0]) * (boxes2[..., 3] - boxes2[..., 1])
+    boxes1_area = boxes1[..., 2] * boxes1[..., 3]
+    boxes2_area = boxes2[..., 2] * boxes2[..., 3]
 
-    # 交集的 左上角坐标
+    boxes1 = np.concatenate([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
+                        boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
+    boxes2 = np.concatenate([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
+                        boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
+
     left_up = np.maximum(boxes1[..., :2], boxes2[..., :2])
-    # 交集的 右下角坐标
     right_down = np.minimum(boxes1[..., 2:], boxes2[..., 2:])
 
-    # 计算交集矩形框的 high 和 width
     inter_section = np.maximum(right_down - left_up, 0.0)
-
-    # 两个矩形框的 交集 面积
     inter_area = inter_section[..., 0] * inter_section[..., 1]
-
-    # 两个矩形框的并集面积
     union_area = boxes1_area + boxes2_area - inter_area
-    # 计算 iou
-    ious = np.maximum(1.0 * inter_area / union_area, np.finfo(np.float32).eps)
+    iou = 1.0 * inter_area / union_area
 
-    return ious
-
-
-# 非极大值抑制
-def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
-    """
-    :param bboxes: (xmin, ymin, xmax, ymax, score, class)
-    :param iou_threshold: iou 阈值
-    :param sigma:
-    :param method: 方法
-    :return:
-    """
-    # 获取 bbox 中类别种类的 list
-    classes_in_img = list(set(bboxes[:, 5]))
-    best_bboxes = []
-
-    for cls in classes_in_img:
-        # 构建一个 bbox batch size 大小的 list，
-        # 类别与 cls 相同的为 list内容为 True，不同的额外 False
-        # 比如 bboxes = [[12, 12, 94, 94, 0.78, 0],
-        #                [34, 34, 64, 64, 0.88, 1],
-        #                [78, 78, 124, 124, 0.98, 0],
-        #                [52, 52, 74, 74, 0.78, 1]
-        #               ]
-        # 第一次遍历得到 [True, False, True, False] 这样的 cls_mask list
-        # 第二次遍历得到 [False, True, False, True] 这样的 cls_mask list
-        cls_mask = (bboxes[:, 5] == cls)
-        # 第一次遍历得到 [[12, 12, 94, 94, 0.78, 0], [78, 78, 124, 124, 0.98, 0]] 这样的 cls_bboxes list
-        # 第二次遍历得到 [[34, 34, 64, 64, 0.88, 1], [52, 52, 74, 74, 0.78, 1]] 这样的 cls_bboxes list
-        cls_bboxes = bboxes[cls_mask]
-
-        while len(cls_bboxes) > 0:
-            # 获取最大概率值的下标
-            max_ind = np.argmax(cls_bboxes[:, 4])
-            # 概率值最大的  bbox 为最佳 bbox
-            best_bbox = cls_bboxes[max_ind]
-            # 将所有 最好的 bbox 放到一个 list 中
-            best_bboxes.append(best_bbox)
-            # 将概率最大的那个 bbox 移除后 剩下的 bboxes
-            cls_bboxes = np.concatenate([cls_bboxes[: max_ind], cls_bboxes[max_ind + 1:]])
-            # 计算 best bbox 与剩下的 bbox 之间的 iou
-            iou = bbox_iou(best_bbox[np.newaxis, :4], cls_bboxes[:, :4])
-            # 构建一个 长度为 len(iou) 的 list，并填充 1 值
-            weight = np.ones((len(iou),), dtype=np.float32)
-
-            assert method in ['nms', 'soft-nms']
-
-            if method == 'nms':
-                # 将大于阈值的 iou，其对应 list 的值设置为 0，用于下面对该值进行移除
-                iou_mask = iou > iou_threshold
-                weight[iou_mask] = 0.0
-
-            if method == 'soft-nms':
-                weight = np.exp(-(1.0 * iou ** 2 / sigma))
-
-            # 移除 大于阈值 的 bboxes，如此重复，直至 cls_bboxes 为空
-            # 将大于阈值的 bbox 概率设置为 零值
-            cls_bboxes[:, 4] = cls_bboxes[:, 4] * weight
-            # 保留概率 大于 零值 的 bbox
-            score_mask = cls_bboxes[:, 4] > 0.
-            cls_bboxes = cls_bboxes[score_mask]
-
-    return best_bboxes
+    return iou
 
 
 # 处理后的盒子
@@ -244,17 +111,20 @@ def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
 
     # bbox 坐标
     pred_xywh = pred_bbox[:, 0:4]
+    # pred_coor = pred_bbox[:, 0:4]
     # bbox 置信度
     pred_conf = pred_bbox[:, 4]
     # bbox 概率
     pred_prob = pred_bbox[:, 5:]
 
-    # (1) (x, y, w, h) --> (xmin, ymin, xmax, ymax)
+    # # (1) (x, y, w, h) --> (xmin, ymin, xmax, ymax)
     pred_coor = np.concatenate([pred_xywh[:, :2] - pred_xywh[:, 2:] * 0.5,
                                 pred_xywh[:, :2] + pred_xywh[:, 2:] * 0.5], axis=-1)
+    print("pred_coor shape: ", pred_coor.shape)
+    print("pred_xywh shape: ", pred_xywh.shape)
 
     # (2) (xmin, ymin, xmax, ymax) -> (xmin_org, ymin_org, xmax_org, ymax_org)
-    org_h, org_w = org_img_shape
+    org_h, org_w, _ = org_img_shape
     resize_ratio = min(input_size / org_w, input_size / org_h)
 
     dw = (input_size - resize_ratio * org_w) / 2
@@ -291,8 +161,9 @@ def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
 
 
 def get_anchors():
-    anchors = "1.25, 1.625, 2.0, 3.75, 4.125, 2.875, 1.875, 3.8125, 3.875, 2.8125, 3.6875, 7.4375, 3.625, 2.8125, 4.875, 6.1875, 11.65625, 10.1875"
+    anchors = cfg.YOLO.ANCHORS
     anchors = np.array(anchors.split(', '), dtype=np.float32)
+
     return anchors.reshape((3, 3, 2))
 
 
@@ -307,10 +178,12 @@ def image_preprocess(image, target_size, gt_boxes=None):
     nw, nh = int(scale * w), int(scale * h)
     image_resized = cv2.resize(image, (nw, nh))
 
+    # shrink the original image, and put the shrink image inside the target size image (416x416)
     image_paded = np.full(shape=[ih, iw, 3], fill_value=128.0)
     dw, dh = (iw - nw) // 2, (ih - nh) // 2
     image_paded[dh:nh + dh, dw:nw + dw, :] = image_resized
     image_paded = image_paded / 255
+    # image_paded = tf.keras.utils.normalize(image_paded)
 
     if gt_boxes is None:
         return image_paded
@@ -320,3 +193,87 @@ def image_preprocess(image, target_size, gt_boxes=None):
         gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
         return image_paded, gt_boxes
 
+
+def dict_to_list(boxes_dict):
+    boxes_dict = boxes_dict[0][0]
+    # print("boxes_dict[0]:", boxes_dict)
+    list = []
+    for i in range(cfg.TRAIN.N_CLASSES):
+        length = len(boxes_dict[i])
+        for j in range(length):
+
+            list.append(boxes_dict[i][j])
+    # print("list: ", list)
+    return list
+
+def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
+    """
+    :param bboxes: (xmin, ymin, xmax, ymax, score, class)
+    Note: soft-nms, https://arxiv.org/pdf/1704.04503.pdf
+          https://github.com/bharatsingh430/soft-nms
+    """
+    classes_in_img = list(set(bboxes[:, 5]))
+    best_bboxes = []
+
+    for cls in classes_in_img:
+        cls_mask = (bboxes[:, 5] == cls)
+        cls_bboxes = bboxes[cls_mask]
+
+        while len(cls_bboxes) > 0:
+            max_ind = np.argmax(cls_bboxes[:, 4])
+            best_bbox = cls_bboxes[max_ind]
+            best_bboxes.append(best_bbox)
+            cls_bboxes = np.concatenate([cls_bboxes[: max_ind], cls_bboxes[max_ind + 1:]])
+            iou = bbox_iou(best_bbox[np.newaxis, :4], cls_bboxes[:, :4])
+            weight = np.ones((len(iou),), dtype=np.float32)
+
+            assert method in ['nms', 'soft-nms']
+
+            if method == 'nms':
+                iou_mask = iou > iou_threshold
+                weight[iou_mask] = 0.0
+
+            if method == 'soft-nms':
+                weight = np.exp(-(1.0 * iou ** 2 / sigma))
+
+            cls_bboxes[:, 4] = cls_bboxes[:, 4] * weight
+            score_mask = cls_bboxes[:, 4] > 0.
+            cls_bboxes = cls_bboxes[score_mask]
+
+    return best_bboxes
+
+
+def draw_bbox(image, bboxes, classes=read_class_names(cfg.YOLO.CLASSES), show_label=True):
+    """
+    bboxes: [x_min, y_min, x_max, y_max, probability, cls_id] format coordinates.
+    """
+
+    num_classes = len(classes)
+    image_h, image_w, _ = image.shape
+    hsv_tuples = [(1.0 * x / num_classes, 1., 1.) for x in range(num_classes)]
+    colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
+    colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), colors))
+
+    random.seed(0)
+    random.shuffle(colors)
+    random.seed(None)
+
+    for i, bbox in enumerate(bboxes):
+        coor = np.array(bbox[:4], dtype=np.int32)
+        fontScale = 0.5
+        score = bbox[4]
+        class_ind = int(bbox[5])
+        bbox_color = colors[class_ind]
+        bbox_thick = int(0.6 * (image_h + image_w) / 600)
+        c1, c2 = (coor[0], coor[1]), (coor[2], coor[3])
+        cv2.rectangle(image, c1, c2, bbox_color, bbox_thick)
+
+        if show_label:
+            bbox_mess = '%s: %.2f' % (classes[class_ind], score)
+            t_size = cv2.getTextSize(bbox_mess, 0, fontScale, thickness=bbox_thick//2)[0]
+            cv2.rectangle(image, c1, (c1[0] + t_size[0], c1[1] - t_size[1] - 3), bbox_color, -1)  # filled
+
+            cv2.putText(image, bbox_mess, (c1[0], c1[1]-2), cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale, (0, 0, 0), bbox_thick//2, lineType=cv2.LINE_AA)
+
+    return image

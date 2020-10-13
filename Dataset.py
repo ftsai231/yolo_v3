@@ -1,7 +1,6 @@
 import json
-
 import cv2
-
+from Yolo_model import bbox_iou
 from config import cfg
 import numpy as np
 import utils as utils
@@ -19,10 +18,12 @@ class Dataset(object):
         self.strides = np.array(cfg.YOLO.STRIDES)
         self.anchors = np.array(utils.get_anchors())
         self.anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
-        self.max_bbox_per_scale = 150
+        self.max_bbox_per_scale = cfg.YOLO.max_output_size
 
         self.annotations = self.load_annotations()
-        self.img_id_list = self.load_car_person_list()[0:9000] if dataset_type == 'train' else self.load_car_person_list()[9000:10500]
+        self.img_id_list = self.load_car_person_list()[
+                           7:8] if dataset_type == 'train' else self.load_car_person_list()[7:8]
+        print(self.img_id_list[0])
         self.num_samples = len(self.img_id_list)
         self.num_batches = int(np.ceil(self.num_samples / self.batch_size))
         self.batch_count = 0
@@ -31,7 +32,6 @@ class Dataset(object):
         return self
 
     def __next__(self):
-        # self.train_input_size = random.choice(self.train_input_size)
         self.train_output_sizes = self.train_input_size // self.strides
         batch_image = np.zeros((self.batch_size, self.train_input_size, self.train_input_size, 3))
 
@@ -70,7 +70,6 @@ class Dataset(object):
 
         else:
             self.batch_count = 0
-            # np.random.shuffle(self.annotations)
             raise StopIteration
 
     def load_annotations(self):
@@ -89,19 +88,18 @@ class Dataset(object):
 
         for i in range(0, len(id_str)):
             id_str[i] = int(id_str[i])
-        # print(type(id_str))
-        # print(id_str)
         return id_str
 
     def parse_annotations(self, annotation, id):
         image_path = '/Users/JTSAI1/Documents/ADAI/train_car_person/' + str(id) + '.jpg'
         image = np.array(cv2.imread(image_path))
+        # image = image / 255
         bboxes = []
 
         for ann in annotation['annotations']:
             if ann['image_id'] == id:
-                x = ann['bbox'][0]
-                y = ann['bbox'][1]
+                x_top_left = ann['bbox'][0]
+                y_top_left = ann['bbox'][1]
                 w = ann['bbox'][2]
                 h = ann['bbox'][3]
                 c = ann['category_id']
@@ -112,16 +110,16 @@ class Dataset(object):
                 else:
                     c = 1
 
-                x = x + w / 2
-                y = y + h / 2
-                x, y, w, h = int(x), int(y), int(w), int(h)
-                bboxes.append([x, y, w, h, c])
-                # print([x, y, w, h, c])
+                x_bottom_right = x_top_left + w
+                y_bottom_right = y_top_left + h
+                x_top_left, y_top_left, x_bottom_right, y_bottom_right = int(x_top_left), int(y_top_left), int(x_bottom_right), int(y_bottom_right)
+                bboxes.append([x_top_left, y_top_left, x_bottom_right, y_bottom_right, c])
 
         bboxes = np.array(bboxes)
+        # print("bboxes before preprocess: ", bboxes)
         image, bboxes = utils.image_preprocess(image, [self.train_input_size, self.train_input_size],
                                                np.copy(bboxes))
-        # print("bboxes after processed:\n", bboxes)
+        # print("bboxes after preprocess: ", bboxes)
         return image, bboxes
 
     def preprocess_true_boxes(self, bboxes):
@@ -140,8 +138,10 @@ class Dataset(object):
             onehot[bbox_class_ind] = 1.0
             uniform_distribution = np.full(self.num_classes, 1.0 / self.num_classes)
             deta = 0.01
-            smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
+            # smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
+            smooth_onehot = onehot
 
+            # looks like it originally use (top, left, bottom, right) -> conver to x_center, y_center, w, h
             bbox_xywh = np.concatenate([(bbox_coor[2:] + bbox_coor[:2]) * 0.5, bbox_coor[2:] - bbox_coor[:2]], axis=-1)
 
             bbox_xywh_scaled = 1.0 * bbox_xywh[np.newaxis, :] / self.strides[:, np.newaxis]
@@ -155,7 +155,7 @@ class Dataset(object):
 
                 iou_scale = utils.bbox_iou(bbox_xywh_scaled[i][np.newaxis, :], anchors_xywh)
                 iou.append(iou_scale)
-                iou_mask = iou_scale > 0.3
+                iou_mask = iou_scale > 0.5
 
                 if np.any(iou_mask):
                     xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
@@ -192,8 +192,6 @@ class Dataset(object):
     def __len__(self):
         return self.num_batches
 
-# if __name__ == "__main__":
-#     dataset = Dataset('train')
-#     dataset.__next__()
-# dataset.parse_annotations(dataset.annotations)
-# print(dataset.img_id)
+if __name__ == "__main__":
+    dataset = Dataset('train')
+    dataset.__next__()
