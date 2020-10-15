@@ -4,7 +4,7 @@ from config import cfg
 import utils as utils
 
 from Yolo_model import darknet53, yolo_conv_block, yolo_detection_layer, con2d_fixed_padding, batch_norm, \
-    upsample, build_boxes, non_max_suppression, bbox_giou, focal, bbox_iou
+    upsample, bbox_giou, focal, bbox_iou
 
 
 class YoloV3:
@@ -12,7 +12,6 @@ class YoloV3:
     # for building the final yolo model
     def __init__(self, inputs, training, data_format=None):
         """Creates the model.
-
         Args:
             n_classes: Number of class labels.
             model_size: The input size of the model.
@@ -20,24 +19,17 @@ class YoloV3:
             iou_threshold: Threshold for the IOU.
             confidence_threshold: Threshold for the confidence score.
             data_format: The input format.
-
         Returns:
             None.
         """
-        # if not data_format:
-        #     if tf.test.is_built_with_cuda():
-        #         data_format = 'channels_first'
-        #     else:
-        #         data_format = 'channels_last'
         self.iou_loss_thresh = 0.5
         self.num_class = 2
         self.anchor_per_scale = 3
         self.classes = utils.read_class_names(cfg.YOLO.CLASSES)
         self.n_classes = len(self.classes)
         self.model_size = cfg.YOLO.MODEL_SIZE
-        self.max_output_size = cfg.YOLO.max_output_size
-        self.iou_threshold = cfg.YOLO.iou_threshold
-        self.confidence_threshold = cfg.YOLO.confidence_threshold
+        self.max_output_size = cfg.YOLO.MAX_OUTPUT_SIZE
+        self.iou_threshold = cfg.YOLO.IOU_THRESHOLD
         self.data_format = data_format
         self.strides = np.array(cfg.YOLO.STRIDES)
 
@@ -46,9 +38,6 @@ class YoloV3:
 
         with tf.variable_scope('yolo_v3_model'):
             self.anchors = utils.get_anchors()
-
-            # normalize values to range [0..1]
-            # inputs = inputs / 255
 
             route1, route2, inputs = darknet53(inputs=inputs, training=training, data_format=self.data_format)
             route, inputs = yolo_conv_block(inputs=inputs, filters=512, training=training, data_format=self.data_format,
@@ -95,17 +84,18 @@ class YoloV3:
             print("self.detection2 shape: ", self.detection2.shape)
             print("self.detection3 shape: ", self.detection3.shape)
 
-            detection1 = tf.reshape(self.detection1, [-1, 13 * 13 * 3, 5 + self.n_classes])
-            detection2 = tf.reshape(self.detection2, [-1, 26 * 26 * 3, 5 + self.n_classes])
-            detection3 = tf.reshape(self.detection3, [-1, 52 * 52 * 3, 5 + self.n_classes])
+            # detection1 = tf.reshape(self.detection1, [-1, 13 * 13 * 3, 5 + self.n_classes])
+            # detection2 = tf.reshape(self.detection2, [-1, 26 * 26 * 3, 5 + self.n_classes])
+            # detection3 = tf.reshape(self.detection3, [-1, 52 * 52 * 3, 5 + self.n_classes])
 
-            self.pred_bbox = tf.concat((detection1, detection2, detection3), axis=1)
+            detection1 = tf.reshape(self.detection1, [-1, 5 + self.n_classes])
+            detection2 = tf.reshape(self.detection2, [-1, 5 + self.n_classes])
+            detection3 = tf.reshape(self.detection3, [-1, 5 + self.n_classes])
 
-        """ make a predict function later"""
-        # self.boxes_dicts = non_max_suppression(detection, n_classes=self.n_classes,
-        #                                       max_output_size=self.max_output_size,
-        #                                       confidence_threshold=self.confidence_threshold,
-        #                                       iou_threshold=self.iou_threshold)
+            with tf.variable_scope('pred_bbox'):
+                self.pred_bbox = tf.concat((detection1, detection2, detection3), axis=0)
+                # print("self.pred_bbox shape in Yolo: ", self.pred_bbox.shape)
+                # print("self.pred_bbox type: ", type(self.pred_bbox))
 
     def compute_loss(self, label_sbbox, label_mbbox, label_lbbox, true_sbbox, true_mbbox, true_lbbox):
         with tf.name_scope('smaller_box_loss'):
@@ -129,7 +119,6 @@ class YoloV3:
         with tf.name_scope('prob_loss'):
             prob_loss = loss_sbbox[2] + loss_mbbox[2] + loss_lbbox[2]
 
-        # print("giou_loss: ", giou_loss, "conf_loss: ", conf_loss, "prob_loss: ", prob_loss)
         return giou_loss, conf_loss, prob_loss
 
     def loss_layer(self, conv, pred, label, bboxes, anchors, stride):
@@ -148,15 +137,6 @@ class YoloV3:
         label_xywh = label[:, :, :, :, 0:4]
         respond_bbox = label[:, :, :, :, 4:5]
         label_prob = label[:, :, :, :, 5:]
-
-        # Box loss with x, y, w, h
-        box_pred_xywh = tf.concat([pred_xywh[:, :, :, :, 0:2], tf.sqrt(pred_xywh[:, :, :, :, 2:4])], axis=-1)
-        box_label_xywh = tf.concat((label_xywh[:, :, :, :, 0:2], tf.sqrt(label_xywh[:, :, :, :, 2:4])), axis=-1)
-        bbox_loss = respond_bbox * focal(box_pred_xywh, box_label_xywh)
-        bbox_loss = tf.reduce_mean(tf.reduce_sum(bbox_loss, axis=[1, 2, 3, 4])) * 0.5
-        # bbox_loss = tf.reduce_sum(bbox_loss) * 0.5
-        # print("bbox_loss: ", bbox_loss)
-        # print("bbox_loss.shape: ", tf.shape(bbox_loss))
 
         giou = tf.expand_dims(bbox_giou(pred_xywh, label_xywh), axis=-1)
         input_size = tf.cast(input_size, tf.float32)
@@ -183,30 +163,8 @@ class YoloV3:
         conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1, 2, 3, 4]))
         prob_loss = tf.reduce_mean(tf.reduce_sum(prob_loss, axis=[1, 2, 3, 4]))
 
-        # prob_loss = 0
-        # conf_loss = 0
+        return giou_loss, conf_loss, prob_loss
 
-        return bbox_loss, conf_loss, prob_loss
-
-    def precision(self, boxes1, boxes2):
-        # boxes1 = label
-        boxes1_area = boxes1[..., 2] * boxes1[..., 3]
-        boxes2_area = boxes2[..., 2] * boxes2[..., 3]
-
-        boxes1 = tf.concat([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
-                            boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
-        boxes2 = tf.concat([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
-                            boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
-
-        left_up = tf.maximum(boxes1[..., :2], boxes2[..., :2])
-        right_down = tf.minimum(boxes1[..., 2:], boxes2[..., 2:])
-
-        inter_section = tf.maximum(right_down - left_up, 0.0)
-        inter_area = inter_section[..., 0] * inter_section[..., 1]
-        precision = 1.0 * inter_area / boxes1_area
-
-        return precision
-
-# if __name__ == "__main__":
-#     inputs_test = tf.placeholder(tf.float32, [3, 416, 416, 3])
-#     model = YoloV3(inputs_test, False)
+if __name__ == "__main__":
+    inputs_test = tf.placeholder(tf.float32, [3, 416, 416, 3])
+    model = YoloV3(inputs_test, False)

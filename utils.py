@@ -12,66 +12,11 @@ from config import cfg
 
 # 获取类别
 def read_class_names(class_file_name):
-    """
-    :param class_file_name: class 文件路径
-    :return:
-    """
     names = {}
     with open(class_file_name, 'r') as data:
-        # 获取类名和下标，用于数值和类之间的转换
         for ID, name in enumerate(data):
             names[ID] = name.strip('\n')
     return names
-
-
-# def draw_boxes(img_names, boxes_dicts, class_names, model_size):
-#     """Draws detected boxes.
-#
-#     Args:
-#         img_names: A list of input images names.
-#         boxes_dict: A class-to-boxes dictionary.
-#         class_names: A class names list.
-#         model_size: The input size of the model.
-#
-#     Returns:
-#         None.
-#     """
-#     colors = ((np.array(color_palette("hls", 2)) * 255)).astype(np.uint8)
-#     # for num, img_name, boxes_dict in zip(range(len(img_names)), img_names,
-#     #                                      boxes_dicts):
-#     img = Image.open(img_names)
-#     draw = ImageDraw.Draw(img)
-#     font = ImageFont.truetype(font='./futura/futur.ttf',
-#                               size=(img.size[0] + img.size[1]) // 100)
-#     resize_factor = \
-#         (img.size[0] / model_size[0], img.size[1] / model_size[1])
-#     # for cls in range(len(class_names)):
-#     #     boxes = boxes_dict[0][cls]
-#     #     print("boxes.shpae: ", boxes.shape)
-#     #     if np.size(boxes) != 0:
-#     # color = colors[cls]
-#     #         print("boxes: ", boxes)
-#     for box in boxes_dicts:
-#         xy, confidence = box[:4], box[4]
-#         xy = [xy[i] * resize_factor[i % 2] for i in range(4)]
-#         x0, y0 = xy[0], xy[1]
-#         thickness = (img.size[0] + img.size[1]) // 200
-#         for t in np.linspace(0, 1, thickness):
-#             xy[0], xy[1] = xy[0] + t, xy[1] + t
-#             xy[2], xy[3] = xy[2] - t, xy[3] - t
-#             draw.rectangle(xy, outline=tuple(color))
-#         text = '{} {:.1f}%'.format(class_names[cls],
-#                                    confidence * 100)
-#         text_size = draw.textsize(text, font=font)
-#         draw.rectangle(
-#             [x0, y0 - text_size[1], x0 + text_size[0], y0],
-#             fill=tuple(color))
-#         draw.text((x0, y0 - text_size[1]), text, fill='black',
-#                       font=font)
-#
-#         # display(img)
-#         img.save('test.jpg')
-#         print('image saved!')
 
 
 def bbox_iou(boxes1, boxes2):
@@ -120,8 +65,6 @@ def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
     # # (1) (x, y, w, h) --> (xmin, ymin, xmax, ymax)
     pred_coor = np.concatenate([pred_xywh[:, :2] - pred_xywh[:, 2:] * 0.5,
                                 pred_xywh[:, :2] + pred_xywh[:, 2:] * 0.5], axis=-1)
-    print("pred_coor shape: ", pred_coor.shape)
-    print("pred_xywh shape: ", pred_xywh.shape)
 
     # (2) (xmin, ymin, xmax, ymax) -> (xmin_org, ymin_org, xmax_org, ymax_org)
     org_h, org_w, _ = org_img_shape
@@ -183,7 +126,6 @@ def image_preprocess(image, target_size, gt_boxes=None):
     dw, dh = (iw - nw) // 2, (ih - nh) // 2
     image_paded[dh:nh + dh, dw:nw + dw, :] = image_resized
     image_paded = image_paded / 255
-    # image_paded = tf.keras.utils.normalize(image_paded)
 
     if gt_boxes is None:
         return image_paded
@@ -193,18 +135,6 @@ def image_preprocess(image, target_size, gt_boxes=None):
         gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
         return image_paded, gt_boxes
 
-
-def dict_to_list(boxes_dict):
-    boxes_dict = boxes_dict[0][0]
-    # print("boxes_dict[0]:", boxes_dict)
-    list = []
-    for i in range(cfg.TRAIN.N_CLASSES):
-        length = len(boxes_dict[i])
-        for j in range(length):
-
-            list.append(boxes_dict[i][j])
-    # print("list: ", list)
-    return list
 
 def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
     """
@@ -277,3 +207,15 @@ def draw_bbox(image, bboxes, classes=read_class_names(cfg.YOLO.CLASSES), show_la
                         fontScale, (0, 0, 0), bbox_thick//2, lineType=cv2.LINE_AA)
 
     return image
+
+
+def read_pb_return_tensors(graph, pb_file, return_elements):
+
+    with tf.gfile.FastGFile(pb_file, 'rb') as f:
+        frozen_graph_def = tf.GraphDef()
+        frozen_graph_def.ParseFromString(f.read())
+
+    with graph.as_default():
+        return_elements = tf.import_graph_def(frozen_graph_def,
+                                              return_elements=return_elements)
+    return return_elements

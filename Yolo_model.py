@@ -9,10 +9,13 @@ from config import cfg
 
 def batch_norm(inputs, training, data_format):
     """Performs a batch normalization using a standard set of parameters."""
-    return tf.layers.batch_normalization(inputs, beta_initializer=tf.zeros_initializer(),
-                                                 gamma_initializer=tf.ones_initializer(),
-                                                 moving_mean_initializer=tf.zeros_initializer(),
-                                                 moving_variance_initializer=tf.ones_initializer(), training=training)
+    # return tf.layers.batch_normalization(inputs, beta_initializer=tf.zeros_initializer(),
+    #                                              gamma_initializer=tf.ones_initializer(),
+    #                                              moving_mean_initializer=tf.zeros_initializer(),
+    #                                              moving_variance_initializer=tf.ones_initializer(), training=training)
+    return tf.layers.batch_normalization(
+        inputs=inputs, momentum=cfg._BATCH_NORM_DECAY, epsilon=cfg._BATCH_NORM_EPSILON, scale=True, training=training)
+
 
 
 def fixed_padding(inputs, kernel_size, data_format):
@@ -168,22 +171,19 @@ def yolo_conv_block(inputs, filters, training, data_format, name):
 
 
 def yolo_detection_layer(inputs, n_classes, anchors, img_size, data_format, name):
-    with tf.variable_scope(name):
-        n_anchors = len(anchors)
+    n_anchors = len(anchors)
 
-        # detection kernel
-        inputs = tf.layers.conv2d(inputs, filters=n_anchors * (5 + n_classes), kernel_size=1, strides=1, use_bias=True,
-                                  data_format=data_format)
+    # detection kernel
+    inputs = tf.layers.conv2d(inputs, filters=n_anchors * (5 + n_classes), kernel_size=1, strides=1, use_bias=True,
+                              data_format=data_format)
 
-        batch_size = inputs.shape[0]
-        output_size = inputs.shape[1]
-        n_classes = cfg.TRAIN.N_CLASSES
-        anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
+    batch_size = inputs.shape[0]
+    output_size = inputs.shape[1]
+    n_classes = cfg.TRAIN.N_CLASSES
+    anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
 
-        conv_bbox = tf.reshape(inputs, (batch_size, output_size, output_size, anchor_per_scale, 5 + n_classes))
+    conv_bbox = tf.reshape(inputs, (batch_size, output_size, output_size, anchor_per_scale, 5 + n_classes))
 
-        # print("conv_bbox.shape: ", conv_bbox.shape)
-        #
     shape = inputs.get_shape().as_list()
     grid_shape = shape[2:4] if data_format == 'channels_first' else shape[1:3]
     # print("grid shape: ", grid_shape)
@@ -216,7 +216,8 @@ def yolo_detection_layer(inputs, n_classes, anchors, img_size, data_format, name
 
     classes = tf.nn.sigmoid(classes)
 
-    inputs = tf.concat([box_centers, box_shapes, confidence, classes], axis=-1)
+    with tf.variable_scope(name):
+        inputs = tf.concat([box_centers, box_shapes, confidence, classes], axis=-1)
 
     #####
 
@@ -303,38 +304,6 @@ def build_boxes(inputs):
                        confidence, classes], axis=-1)
 
     return boxes
-
-
-def non_max_suppression(inputs, n_classes, max_output_size, iou_threshold,
-                        confidence_threshold):
-    batch = tf.unstack(inputs)
-    boxes_dicts = []
-    for boxes in batch:
-        boxes = tf.boolean_mask(boxes, boxes[:, 4] > confidence_threshold)
-        classes = tf.argmax(boxes[:, 5:], axis=-1)
-        classes = tf.expand_dims(tf.to_float(classes), axis=-1)
-        boxes = tf.concat([boxes[:, :5], classes], axis=-1)
-
-        boxes_dict = dict()
-        for cls in range(n_classes):
-            mask = tf.equal(boxes[:, 5], cls)
-            mask_shape = mask.get_shape()
-            if mask_shape.ndims != 0:
-                class_boxes = tf.boolean_mask(boxes, mask)
-                boxes_coords, boxes_conf_scores, _ = tf.split(class_boxes,
-                                                              [4, 1, -1],
-                                                              axis=-1)
-                boxes_conf_scores = tf.reshape(boxes_conf_scores, [-1])
-                indices = tf.image.non_max_suppression(boxes_coords,
-                                                       boxes_conf_scores,
-                                                       max_output_size,
-                                                       iou_threshold)
-                class_boxes = tf.gather(class_boxes, indices)
-                boxes_dict[cls] = class_boxes[:, :5]
-
-        boxes_dicts.append(boxes_dict)
-
-    return boxes_dicts
 
 
 # x, y, w, h

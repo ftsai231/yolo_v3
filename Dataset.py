@@ -1,6 +1,5 @@
 import json
 import cv2
-from Yolo_model import bbox_iou
 from config import cfg
 import numpy as np
 import utils as utils
@@ -18,11 +17,11 @@ class Dataset(object):
         self.strides = np.array(cfg.YOLO.STRIDES)
         self.anchors = np.array(utils.get_anchors())
         self.anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
-        self.max_bbox_per_scale = cfg.YOLO.max_output_size
+        self.max_bbox_per_scale = cfg.YOLO.MAX_OUTPUT_SIZE
 
         self.annotations = self.load_annotations()
-        self.img_id_list = self.load_car_person_list()[
-                           7:8] if dataset_type == 'train' else self.load_car_person_list()[7:8]
+        self.img_id_list = self.load_car_person_list()[:20] if dataset_type == 'train' \
+                                                                else self.load_car_person_list()[5:6]
         print(self.img_id_list[0])
         self.num_samples = len(self.img_id_list)
         self.num_batches = int(np.ceil(self.num_samples / self.batch_size))
@@ -54,6 +53,8 @@ class Dataset(object):
                 index = self.batch_count * self.batch_size + num
                 if index >= self.num_samples: index -= self.num_samples
                 id = self.img_id_list[index]
+
+                # bboxes: xmin, ymin, xmax, ymax
                 image, bboxes = self.parse_annotations(self.annotations, id)
                 label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = self.preprocess_true_boxes(bboxes)
 
@@ -75,7 +76,6 @@ class Dataset(object):
     def load_annotations(self):
         with open(self.annot_path, 'r') as f:
             annotations = json.load(f)
-        # np.random.shuffle(annotations)
         return annotations
 
     def load_car_person_list(self):
@@ -91,9 +91,8 @@ class Dataset(object):
         return id_str
 
     def parse_annotations(self, annotation, id):
-        image_path = '/Users/JTSAI1/Documents/ADAI/train_car_person/' + str(id) + '.jpg'
+        image_path = './train_car_person/' + str(id) + '.jpg'
         image = np.array(cv2.imread(image_path))
-        # image = image / 255
         bboxes = []
 
         for ann in annotation['annotations']:
@@ -126,7 +125,6 @@ class Dataset(object):
 
         label = [np.zeros((self.train_output_sizes[i], self.train_output_sizes[i], self.anchor_per_scale,
                            5 + self.num_classes)) for i in range(3)]
-        # bounding boxes
         bboxes_xywh = [np.zeros((self.max_bbox_per_scale, 4)) for _ in range(3)]
         bbox_count = np.zeros((3,))
 
@@ -138,12 +136,9 @@ class Dataset(object):
             onehot[bbox_class_ind] = 1.0
             uniform_distribution = np.full(self.num_classes, 1.0 / self.num_classes)
             deta = 0.01
-            # smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
-            smooth_onehot = onehot
+            smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
 
-            # looks like it originally use (top, left, bottom, right) -> conver to x_center, y_center, w, h
             bbox_xywh = np.concatenate([(bbox_coor[2:] + bbox_coor[:2]) * 0.5, bbox_coor[2:] - bbox_coor[:2]], axis=-1)
-
             bbox_xywh_scaled = 1.0 * bbox_xywh[np.newaxis, :] / self.strides[:, np.newaxis]
 
             iou = []
@@ -153,9 +148,9 @@ class Dataset(object):
                 anchors_xywh[:, 0:2] = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32) + 0.5
                 anchors_xywh[:, 2:4] = self.anchors[i]
 
-                iou_scale = utils.bbox_iou(bbox_xywh_scaled[i][np.newaxis, :], anchors_xywh)
+                iou_scale = self.bbox_iou(bbox_xywh_scaled[i][np.newaxis, :], anchors_xywh)
                 iou.append(iou_scale)
-                iou_mask = iou_scale > 0.5
+                iou_mask = iou_scale > 0.3
 
                 if np.any(iou_mask):
                     xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
@@ -188,6 +183,28 @@ class Dataset(object):
         label_sbbox, label_mbbox, label_lbbox = label
         sbboxes, mbboxes, lbboxes = bboxes_xywh
         return label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes
+
+    def bbox_iou(self, boxes1, boxes2):
+
+        boxes1 = np.array(boxes1)
+        boxes2 = np.array(boxes2)
+
+        boxes1_area = boxes1[..., 2] * boxes1[..., 3]
+        boxes2_area = boxes2[..., 2] * boxes2[..., 3]
+
+        boxes1 = np.concatenate([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
+                                boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
+        boxes2 = np.concatenate([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
+                                boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
+
+        left_up = np.maximum(boxes1[..., :2], boxes2[..., :2])
+        right_down = np.minimum(boxes1[..., 2:], boxes2[..., 2:])
+
+        inter_section = np.maximum(right_down - left_up, 0.0)
+        inter_area = inter_section[..., 0] * inter_section[..., 1]
+        union_area = boxes1_area + boxes2_area - inter_area
+
+        return inter_area / union_area
 
     def __len__(self):
         return self.num_batches
