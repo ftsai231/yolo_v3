@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 # from IPython.display import display
 from seaborn import color_palette
 from config import cfg
+import Dataset
 
 
 # 获取类别
@@ -19,10 +20,8 @@ def read_class_names(class_file_name):
     return names
 
 
+# x, y, w, h
 def bbox_iou(boxes1, boxes2):
-    boxes1 = np.array(boxes1)
-    boxes2 = np.array(boxes2)
-
     boxes1_area = boxes1[..., 2] * boxes1[..., 3]
     boxes2_area = boxes2[..., 2] * boxes2[..., 3]
 
@@ -37,7 +36,7 @@ def bbox_iou(boxes1, boxes2):
     inter_section = np.maximum(right_down - left_up, 0.0)
     inter_area = inter_section[..., 0] * inter_section[..., 1]
     union_area = boxes1_area + boxes2_area - inter_area
-    iou = 1.0 * inter_area / union_area
+    iou = 1.0 * inter_area / np.maximum(union_area, 1e-10)
 
     return iou
 

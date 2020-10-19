@@ -60,10 +60,6 @@ name = ['person', 'car']
 
 ''' -----------------------------------------------------------------------------------------------------------------'''
 
-list = [[[1,2,3,4], [1,2,3,4], [1,2,3,4], [1,2,3,4]]]
-list = np.array(list)
-print(list.shape)
-list.reshape([-1, 1])
-print(list.shape)
-
-
+list = [1,2,3,4]
+list1 = [2,3,4,5]
+print(tf.reduce_mean(list) + tf.reduce_mean(list1))

@@ -4,7 +4,7 @@ from config import cfg
 import utils as utils
 
 from Yolo_model import darknet53, yolo_conv_block, yolo_detection_layer, con2d_fixed_padding, batch_norm, \
-    upsample, bbox_giou, focal, bbox_iou
+    upsample, bbox_giou, focal
 
 
 class YoloV3:
@@ -94,8 +94,6 @@ class YoloV3:
 
             with tf.variable_scope('pred_bbox'):
                 self.pred_bbox = tf.concat((detection1, detection2, detection3), axis=0)
-                # print("self.pred_bbox shape in Yolo: ", self.pred_bbox.shape)
-                # print("self.pred_bbox type: ", type(self.pred_bbox))
 
     def compute_loss(self, label_sbbox, label_mbbox, label_lbbox, true_sbbox, true_mbbox, true_lbbox):
         with tf.name_scope('smaller_box_loss'):
@@ -122,6 +120,8 @@ class YoloV3:
         return giou_loss, conf_loss, prob_loss
 
     def loss_layer(self, conv, pred, label, bboxes, anchors, stride):
+        np.set_printoptions(threshold=np.inf)
+
         conv_shape = tf.shape(conv)
         batch_size = conv_shape[0]
         output_size = conv_shape[1]
@@ -144,7 +144,7 @@ class YoloV3:
         bbox_loss_scale = 2.0 - 1.0 * label_xywh[:, :, :, :, 2:3] * label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
         giou_loss = respond_bbox * bbox_loss_scale * (1 - giou)
 
-        iou = bbox_iou(pred_xywh[:, :, :, :, np.newaxis, :], bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
+        iou = self.bbox_iou(pred_xywh[:, :, :, :, np.newaxis, :], bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
         max_iou = tf.expand_dims(tf.reduce_max(iou, axis=-1), axis=-1)
 
         respond_bgd = (1.0 - respond_bbox) * tf.cast(max_iou < self.iou_loss_thresh, tf.float32)
@@ -164,6 +164,26 @@ class YoloV3:
         prob_loss = tf.reduce_mean(tf.reduce_sum(prob_loss, axis=[1, 2, 3, 4]))
 
         return giou_loss, conf_loss, prob_loss
+
+    def bbox_iou(self, boxes1, boxes2):
+        boxes1_area = boxes1[..., 2] * boxes1[..., 3]
+        boxes2_area = boxes2[..., 2] * boxes2[..., 3]
+
+        boxes1 = tf.concat([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
+                            boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
+        boxes2 = tf.concat([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
+                            boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
+
+        left_up = tf.maximum(boxes1[..., :2], boxes2[..., :2])
+        right_down = tf.minimum(boxes1[..., 2:], boxes2[..., 2:])
+
+        inter_section = tf.maximum(right_down - left_up, 0.0)
+        inter_area = inter_section[..., 0] * inter_section[..., 1]
+        union_area = boxes1_area + boxes2_area - inter_area
+        iou = 1.0 * inter_area / tf.maximum(union_area, 1e-10)
+
+        return iou
+
 
 if __name__ == "__main__":
     inputs_test = tf.placeholder(tf.float32, [3, 416, 416, 3])

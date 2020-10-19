@@ -1,20 +1,13 @@
-import random
-import string
-
-import numpy as np
 import tensorflow as tf
-
 from config import cfg
 
 
 def batch_norm(inputs, training, data_format):
     """Performs a batch normalization using a standard set of parameters."""
-    # return tf.layers.batch_normalization(inputs, beta_initializer=tf.zeros_initializer(),
-    #                                              gamma_initializer=tf.ones_initializer(),
-    #                                              moving_mean_initializer=tf.zeros_initializer(),
-    #                                              moving_variance_initializer=tf.ones_initializer(), training=training)
-    return tf.layers.batch_normalization(
-        inputs=inputs, momentum=cfg._BATCH_NORM_DECAY, epsilon=cfg._BATCH_NORM_EPSILON, scale=True, training=training)
+    return tf.layers.batch_normalization(inputs, beta_initializer=tf.zeros_initializer(),
+                                                 gamma_initializer=tf.ones_initializer(),
+                                                 moving_mean_initializer=tf.zeros_initializer(),
+                                                 moving_variance_initializer=tf.ones_initializer(), training=training)
 
 
 
@@ -177,19 +170,22 @@ def yolo_detection_layer(inputs, n_classes, anchors, img_size, data_format, name
     inputs = tf.layers.conv2d(inputs, filters=n_anchors * (5 + n_classes), kernel_size=1, strides=1, use_bias=True,
                               data_format=data_format)
 
-    batch_size = inputs.shape[0]
-    output_size = inputs.shape[1]
-    n_classes = cfg.TRAIN.N_CLASSES
-    anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
-
-    conv_bbox = tf.reshape(inputs, (batch_size, output_size, output_size, anchor_per_scale, 5 + n_classes))
+    # batch_size = inputs.shape[0]
+    # output_size = inputs.shape[1]
+    # n_classes = cfg.TRAIN.N_CLASSES
+    # anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
+    #
+    # conv_bbox = tf.reshape(inputs, (batch_size, output_size, output_size, anchor_per_scale, 5 + n_classes))
 
     shape = inputs.get_shape().as_list()
     grid_shape = shape[2:4] if data_format == 'channels_first' else shape[1:3]
     # print("grid shape: ", grid_shape)
     if data_format == 'channels_first':
         inputs = tf.transpose(inputs, [0, 2, 3, 1])
+
     inputs = tf.reshape(inputs, [-1, grid_shape[0], grid_shape[0], n_anchors, 5 + n_classes])
+
+    conv_bbox = inputs
 
     strides = (img_size[0] // grid_shape[0], img_size[1] // grid_shape[1])
 
@@ -307,24 +303,24 @@ def build_boxes(inputs):
 
 
 # x, y, w, h
-def bbox_iou(boxes1, boxes2):
-    boxes1_area = boxes1[..., 2] * boxes1[..., 3]
-    boxes2_area = boxes2[..., 2] * boxes2[..., 3]
-
-    boxes1 = tf.concat([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
-                        boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
-    boxes2 = tf.concat([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
-                        boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
-
-    left_up = tf.maximum(boxes1[..., :2], boxes2[..., :2])
-    right_down = tf.minimum(boxes1[..., 2:], boxes2[..., 2:])
-
-    inter_section = tf.maximum(right_down - left_up, 0.0)
-    inter_area = inter_section[..., 0] * inter_section[..., 1]
-    union_area = boxes1_area + boxes2_area - inter_area
-    iou = 1.0 * inter_area / union_area
-
-    return iou
+# def bbox_iou(boxes1, boxes2):
+#     boxes1_area = boxes1[..., 2] * boxes1[..., 3]
+#     boxes2_area = boxes2[..., 2] * boxes2[..., 3]
+#
+#     boxes1 = tf.concat([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
+#                         boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
+#     boxes2 = tf.concat([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
+#                         boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
+#
+#     left_up = tf.maximum(boxes1[..., :2], boxes2[..., :2])
+#     right_down = tf.minimum(boxes1[..., 2:], boxes2[..., 2:])
+#
+#     inter_section = tf.maximum(right_down - left_up, 0.0)
+#     inter_area = inter_section[..., 0] * inter_section[..., 1]
+#     union_area = boxes1_area + boxes2_area - inter_area
+#     iou = 1.0 * inter_area / union_area
+#
+#     return iou
 
 
 # x, y, w, h
@@ -345,16 +341,16 @@ def bbox_giou(boxes1, boxes2):
     left_up = tf.maximum(boxes1[..., :2], boxes2[..., :2])
     right_down = tf.minimum(boxes1[..., 2:], boxes2[..., 2:])
 
-    inter_section = tf.maximum(tf.abs(right_down - left_up), 0.0)
+    inter_section = tf.maximum(right_down - left_up, 0.0)
     inter_area = inter_section[..., 0] * inter_section[..., 1]
     union_area = boxes1_area + boxes2_area - inter_area
-    iou = inter_area / union_area
+    iou = inter_area / tf.maximum(union_area, 1e-10)
 
     enclose_left_up = tf.minimum(boxes1[..., :2], boxes2[..., :2])
     enclose_right_down = tf.maximum(boxes1[..., 2:], boxes2[..., 2:])
     enclose = tf.maximum(enclose_right_down - enclose_left_up, 0.0)
     enclose_area = enclose[..., 0] * enclose[..., 1]
-    giou = iou - 1.0 * (enclose_area - union_area) / enclose_area
+    giou = iou - 1.0 * (enclose_area - union_area) / tf.maximum(enclose_area, 1e-10)
 
     return giou
 

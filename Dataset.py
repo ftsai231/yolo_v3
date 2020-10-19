@@ -1,94 +1,146 @@
 import json
+import os
 import cv2
-from config import cfg
+import random
 import numpy as np
+import tensorflow as tf
 import utils as utils
+from config import cfg
+
 
 
 class Dataset(object):
+    """implement Dataset here"""
     def __init__(self, dataset_type):
         self.annot_path = cfg.TRAIN.ANNOT_PATH if dataset_type == 'train' else cfg.TRAIN.ANNOT_PATH
-        self.batch_size = cfg.TRAIN.BATCH_SIZE if dataset_type == 'train' else cfg.TEST.BATCH_SIZE
-        # self.data_aug = cfg.TRAIN.DATA_AUG if dataset_type == 'train' else cfg.TEST.DATA_AUG
+        self.input_sizes = cfg.TRAIN.INPUT_SIZE if dataset_type == 'train' else cfg.TEST.INPUT_SIZE
+        self.batch_size  = cfg.TRAIN.BATCH_SIZE if dataset_type == 'train' else cfg.TEST.BATCH_SIZE
+        self.data_aug    = cfg.TRAIN.DATA_AUG   if dataset_type == 'train' else cfg.TEST.DATA_AUG
 
-        self.train_input_size = cfg.TRAIN.INPUT_SIZE
+        self.train_input_sizes = cfg.TRAIN.INPUT_SIZE
+        self.strides = np.array(cfg.YOLO.STRIDES)
         self.classes = utils.read_class_names(cfg.YOLO.CLASSES)
         self.num_classes = len(self.classes)
-        self.strides = np.array(cfg.YOLO.STRIDES)
         self.anchors = np.array(utils.get_anchors())
         self.anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
-        self.max_bbox_per_scale = cfg.YOLO.MAX_OUTPUT_SIZE
+        self.max_bbox_per_scale = 150
+        self.img_id_list = self.load_car_person_list()[:10016] if dataset_type == 'train' \
+            else self.load_car_person_list()[10016:10656]
+        self.train_input_size = 416
 
         self.annotations = self.load_annotations()
-        self.img_id_list = self.load_car_person_list()[:20] if dataset_type == 'train' \
-                                                                else self.load_car_person_list()[5:6]
-        print(self.img_id_list[0])
         self.num_samples = len(self.img_id_list)
-        self.num_batches = int(np.ceil(self.num_samples / self.batch_size))
+        self.num_batchs = int(np.ceil(self.num_samples / self.batch_size))
         self.batch_count = 0
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        self.train_output_sizes = self.train_input_size // self.strides
-        batch_image = np.zeros((self.batch_size, self.train_input_size, self.train_input_size, 3))
 
-        # label_bbox
-        batch_label_sbbox = np.zeros((self.batch_size, self.train_output_sizes[0], self.train_output_sizes[0],
-                                      self.anchor_per_scale, 5 + self.num_classes))
-        batch_label_mbbox = np.zeros((self.batch_size, self.train_output_sizes[1], self.train_output_sizes[1],
-                                      self.anchor_per_scale, 5 + self.num_classes))
-        batch_label_lbbox = np.zeros((self.batch_size, self.train_output_sizes[2], self.train_output_sizes[2],
-                                      self.anchor_per_scale, 5 + self.num_classes))
+        with tf.device('/cpu:0'):
+            # self.train_input_size = random.choice(self.train_input_sizes)
+            self.train_output_sizes = self.train_input_size // self.strides
 
-        # bbox
-        batch_sbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
-        batch_mbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
-        batch_lbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
+            batch_image = np.zeros((self.batch_size, self.train_input_size, self.train_input_size, 3))
 
-        num = 0
-        if self.batch_count < self.num_batches:
-            while num < self.batch_size:
-                index = self.batch_count * self.batch_size + num
-                if index >= self.num_samples: index -= self.num_samples
-                id = self.img_id_list[index]
+            batch_label_sbbox = np.zeros((self.batch_size, self.train_output_sizes[0], self.train_output_sizes[0],
+                                          self.anchor_per_scale, 5 + self.num_classes))
+            batch_label_mbbox = np.zeros((self.batch_size, self.train_output_sizes[1], self.train_output_sizes[1],
+                                          self.anchor_per_scale, 5 + self.num_classes))
+            batch_label_lbbox = np.zeros((self.batch_size, self.train_output_sizes[2], self.train_output_sizes[2],
+                                          self.anchor_per_scale, 5 + self.num_classes))
 
-                # bboxes: xmin, ymin, xmax, ymax
-                image, bboxes = self.parse_annotations(self.annotations, id)
-                label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = self.preprocess_true_boxes(bboxes)
+            batch_sbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
+            batch_mbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
+            batch_lbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
 
-                batch_image[num, :, :, :] = image
-                batch_label_sbbox[num, :, :, :, :] = label_sbbox
-                batch_label_mbbox[num, :, :, :, :] = label_mbbox
-                batch_label_lbbox[num, :, :, :, :] = label_lbbox
-                batch_sbboxes[num, :, :] = sbboxes
-                batch_mbboxes[num, :, :] = mbboxes
-                batch_lbboxes[num, :, :] = lbboxes
-                num += 1
-            self.batch_count += 1
-            return batch_image, batch_label_sbbox, batch_label_mbbox, batch_label_lbbox, batch_sbboxes, batch_mbboxes, batch_lbboxes
+            num = 0
+            if self.batch_count < self.num_batchs:
+                while num < self.batch_size:
+                    index = self.batch_count * self.batch_size + num
+                    if index >= self.num_samples: index -= self.num_samples
+                    # annotation = self.annotations[index]
+                    id = self.img_id_list[index]
 
-        else:
-            self.batch_count = 0
-            raise StopIteration
+                    # bboxes: xmin, ymin, xmax, ymax
+                    image, bboxes = self.parse_annotations(self.annotations, id)
+                    label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = self.preprocess_true_boxes(bboxes)
+
+                    batch_image[num, :, :, :] = image
+                    batch_label_sbbox[num, :, :, :, :] = label_sbbox
+                    batch_label_mbbox[num, :, :, :, :] = label_mbbox
+                    batch_label_lbbox[num, :, :, :, :] = label_lbbox
+                    batch_sbboxes[num, :, :] = sbboxes
+                    batch_mbboxes[num, :, :] = mbboxes
+                    batch_lbboxes[num, :, :] = lbboxes
+                    num += 1
+                self.batch_count += 1
+                return batch_image, batch_label_sbbox, batch_label_mbbox, batch_label_lbbox, \
+                       batch_sbboxes, batch_mbboxes, batch_lbboxes
+            else:
+                self.batch_count = 0
+                # np.random.shuffle(self.annotations)
+                raise StopIteration
 
     def load_annotations(self):
         with open(self.annot_path, 'r') as f:
             annotations = json.load(f)
         return annotations
 
-    def load_car_person_list(self):
-        open_file = open('car_and_person.txt').read()
-        id_str = ""
-        for line in open_file:
-            id_str += line
+    def random_horizontal_flip(self, image, bboxes):
 
-        id_str = id_str.strip("[]").split(", ")
+        if random.random() < 0.5:
+            _, w, _ = image.shape
+            image = image[:, ::-1, :]
+            bboxes[:, [0,2]] = w - bboxes[:, [2,0]]
 
-        for i in range(0, len(id_str)):
-            id_str[i] = int(id_str[i])
-        return id_str
+        return image, bboxes
+
+    def random_crop(self, image, bboxes):
+
+        if random.random() < 0.5:
+            h, w, _ = image.shape
+            max_bbox = np.concatenate([np.min(bboxes[:, 0:2], axis=0), np.max(bboxes[:, 2:4], axis=0)], axis=-1)
+
+            max_l_trans = max_bbox[0]
+            max_u_trans = max_bbox[1]
+            max_r_trans = w - max_bbox[2]
+            max_d_trans = h - max_bbox[3]
+
+            crop_xmin = max(0, int(max_bbox[0] - random.uniform(0, max_l_trans)))
+            crop_ymin = max(0, int(max_bbox[1] - random.uniform(0, max_u_trans)))
+            crop_xmax = max(w, int(max_bbox[2] + random.uniform(0, max_r_trans)))
+            crop_ymax = max(h, int(max_bbox[3] + random.uniform(0, max_d_trans)))
+
+            image = image[crop_ymin : crop_ymax, crop_xmin : crop_xmax]
+
+            bboxes[:, [0, 2]] = bboxes[:, [0, 2]] - crop_xmin
+            bboxes[:, [1, 3]] = bboxes[:, [1, 3]] - crop_ymin
+
+        return image, bboxes
+
+    def random_translate(self, image, bboxes):
+
+        if random.random() < 0.5:
+            h, w, _ = image.shape
+            max_bbox = np.concatenate([np.min(bboxes[:, 0:2], axis=0), np.max(bboxes[:, 2:4], axis=0)], axis=-1)
+
+            max_l_trans = max_bbox[0]
+            max_u_trans = max_bbox[1]
+            max_r_trans = w - max_bbox[2]
+            max_d_trans = h - max_bbox[3]
+
+            tx = random.uniform(-(max_l_trans - 1), (max_r_trans - 1))
+            ty = random.uniform(-(max_u_trans - 1), (max_d_trans - 1))
+
+            M = np.array([[1, 0, tx], [0, 1, ty]])
+            image = cv2.warpAffine(image, M, (w, h))
+
+            bboxes[:, [0, 2]] = bboxes[:, [0, 2]] + tx
+            bboxes[:, [1, 3]] = bboxes[:, [1, 3]] + ty
+
+        return image, bboxes
 
     def parse_annotations(self, annotation, id):
         image_path = './train_car_person/' + str(id) + '.jpg'
@@ -111,7 +163,8 @@ class Dataset(object):
 
                 x_bottom_right = x_top_left + w
                 y_bottom_right = y_top_left + h
-                x_top_left, y_top_left, x_bottom_right, y_bottom_right = int(x_top_left), int(y_top_left), int(x_bottom_right), int(y_bottom_right)
+                x_top_left, y_top_left, x_bottom_right, y_bottom_right = int(x_top_left), int(y_top_left), int(
+                    x_bottom_right), int(y_bottom_right)
                 bboxes.append([x_top_left, y_top_left, x_bottom_right, y_bottom_right, c])
 
         bboxes = np.array(bboxes)
@@ -120,6 +173,40 @@ class Dataset(object):
                                                np.copy(bboxes))
         # print("bboxes after preprocess: ", bboxes)
         return image, bboxes
+
+    def load_car_person_list(self):
+        open_file = open('car_and_person.txt').read()
+        id_str = ""
+        for line in open_file:
+            id_str += line
+
+        id_str = id_str.strip("[]").split(", ")
+
+        for i in range(0, len(id_str)):
+            id_str[i] = int(id_str[i])
+        return id_str
+
+    def bbox_iou(self, boxes1, boxes2):
+
+        boxes1 = np.array(boxes1)
+        boxes2 = np.array(boxes2)
+
+        boxes1_area = boxes1[..., 2] * boxes1[..., 3]
+        boxes2_area = boxes2[..., 2] * boxes2[..., 3]
+
+        boxes1 = np.concatenate([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
+                                boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
+        boxes2 = np.concatenate([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
+                                boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
+
+        left_up = np.maximum(boxes1[..., :2], boxes2[..., :2])
+        right_down = np.minimum(boxes1[..., 2:], boxes2[..., 2:])
+
+        inter_section = np.maximum(right_down - left_up, 0.0)
+        inter_area = inter_section[..., 0] * inter_section[..., 1]
+        union_area = boxes1_area + boxes2_area - inter_area
+
+        return inter_area / np.maximum(union_area, 1e-10)
 
     def preprocess_true_boxes(self, bboxes):
 
@@ -184,30 +271,8 @@ class Dataset(object):
         sbboxes, mbboxes, lbboxes = bboxes_xywh
         return label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes
 
-    def bbox_iou(self, boxes1, boxes2):
-
-        boxes1 = np.array(boxes1)
-        boxes2 = np.array(boxes2)
-
-        boxes1_area = boxes1[..., 2] * boxes1[..., 3]
-        boxes2_area = boxes2[..., 2] * boxes2[..., 3]
-
-        boxes1 = np.concatenate([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
-                                boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
-        boxes2 = np.concatenate([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
-                                boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
-
-        left_up = np.maximum(boxes1[..., :2], boxes2[..., :2])
-        right_down = np.minimum(boxes1[..., 2:], boxes2[..., 2:])
-
-        inter_section = np.maximum(right_down - left_up, 0.0)
-        inter_area = inter_section[..., 0] * inter_section[..., 1]
-        union_area = boxes1_area + boxes2_area - inter_area
-
-        return inter_area / union_area
-
     def __len__(self):
-        return self.num_batches
+        return self.num_batchs
 
 if __name__ == "__main__":
     dataset = Dataset('train')

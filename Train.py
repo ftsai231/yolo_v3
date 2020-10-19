@@ -1,22 +1,28 @@
 import os
 import time
-
 import tensorflow as tf
+import numpy as np
 from Dataset import Dataset
 from config import cfg
 import utils as utils
 from Yolo import YoloV3
 from tqdm import tqdm
-import numpy as np
 
 
 class YoloTrain(object):
     def __init__(self):
         print("initialize values...")
-        tf.reset_default_graph()
         self.anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
         self.classes = utils.read_class_names(cfg.YOLO.CLASSES)
         self.num_classes = len(self.classes)
+
+        self.learn_rate_init = cfg.TRAIN.LEARN_RATE_INIT
+        self.learn_rate_end = cfg.TRAIN.LEARN_RATE_END
+        self.first_stage_epochs = cfg.TRAIN.FISRT_STAGE_EPOCHS
+        self.second_stage_epochs = cfg.TRAIN.SECOND_STAGE_EPOCHS
+        self.epoch = cfg.TRAIN.EPOCH
+        self.warmup_periods = cfg.TRAIN.WARMUP_EPOCHS
+
 
         # self.initial_weight = cfg.TRAIN.INITIAL_WEIGHT
         self.time = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time()))
@@ -26,25 +32,16 @@ class YoloTrain(object):
         self.train_logdir = "./train_log/mydata_test1/"
         self.trainset = Dataset('train')
         self.testset = Dataset('test')
-        self.steps_per_epoch = len(self.trainset)
-
-        self.learn_rate_init = cfg.TRAIN.LEARN_RATE_INIT
-        self.learn_rate_end = cfg.TRAIN.LEARN_RATE_END
-        self.first_stage_epochs = cfg.TRAIN.FISRT_STAGE_EPOCHS
-        self.second_stage_epochs = cfg.TRAIN.SECOND_STAGE_EPOCHS
-        self.warmup_epoch = cfg.TRAIN.WARMUP_EPOCHS
-        self.epoch = cfg.TRAIN.EPOCH
         self.steps_per_period = len(self.trainset)
 
         config = tf.ConfigProto(allow_soft_placement=True)
+        config.gpu_options.allow_growth = True
         self.sess = tf.Session(config=config)
 
         with tf.name_scope('define_input'):
-            print("defining inputs...")
-
-            self.input_data = tf.placeholder(dtype=tf.float32,
-                                             shape=[cfg.TRAIN.BATCH_SIZE, self.trainset.train_input_size,
-                                                    self.trainset.train_input_size, 3],
+            print("defining inpuuts...")
+            self.input_data = tf.placeholder(dtype=tf.float32, shape=[cfg.TRAIN.BATCH_SIZE, self.trainset.train_input_size,
+                                                                      self.trainset.train_input_size, 3],
                                              name='input_data')
             self.label_sbbox = tf.placeholder(dtype=tf.float32, name='label_sbbox')
             self.label_mbbox = tf.placeholder(dtype=tf.float32, name='label_mbbox')
@@ -52,16 +49,17 @@ class YoloTrain(object):
             self.true_sbbox = tf.placeholder(dtype=tf.float32, name='true_sbbox')
             self.true_mbbox = tf.placeholder(dtype=tf.float32, name='true_mbbox')
             self.true_lbbox = tf.placeholder(dtype=tf.float32, name='true_lbbox')
-            self.trainable = tf.placeholder(dtype=tf.bool, name='training')
+            self.trainable = tf.placeholder(dtype=tf.bool, name='trainig')
 
         with tf.name_scope('define_loss'):
             print("defining loss...")
             self.model = YoloV3(inputs=self.input_data, training=self.trainable)
             self.network_para = tf.global_variables()
-            giou_loss, conf_loss, prob_loss = \
+            self.giou_loss, self.conf_loss, self.prob_loss = \
                 self.model.compute_loss(self.label_sbbox, self.label_mbbox, self.label_lbbox, self.true_sbbox,
                                         self.true_mbbox, self.true_lbbox)
-            self.loss = giou_loss + conf_loss + prob_loss
+
+            self.loss = self.giou_loss + self.conf_loss + self.prob_loss
 
         # TODO: change this part if training doesnt do good
         with tf.name_scope('define_learning_rate'):
@@ -71,9 +69,9 @@ class YoloTrain(object):
         with tf.name_scope('learn_rate'):
             print("learn_rate")
             self.global_step = tf.Variable(1.0, dtype=tf.float64, trainable=False, name='global_step')
-            warmup_steps = tf.constant(self.warmup_epoch * self.steps_per_period,
+            warmup_steps = tf.constant(self.warmup_periods * 1,
                                        dtype=tf.float64, name='warmup_steps')
-            train_steps = tf.constant((self.first_stage_epochs + self.second_stage_epochs) * self.steps_per_period,
+            train_steps = tf.constant(self.epoch * self.steps_per_period,
                                       dtype=tf.float64, name='train_steps')
             self.learn_rate = tf.cond(
                 pred=self.global_step < warmup_steps,
@@ -91,9 +89,9 @@ class YoloTrain(object):
 
         with tf.name_scope('summary'):
             print("summary...")
-            tf.summary.scalar("giou_loss", giou_loss)
-            tf.summary.scalar("conf_loss", conf_loss)
-            tf.summary.scalar("prob_loss", prob_loss)
+            tf.summary.scalar("giou_loss", self.giou_loss)
+            tf.summary.scalar("conf_loss", self.conf_loss)
+            tf.summary.scalar("prob_loss", self.prob_loss)
             tf.summary.scalar("total_loss", self.loss)
 
             if os.path.exists(self.train_logdir):
@@ -104,33 +102,21 @@ class YoloTrain(object):
             self.write_op = tf.summary.merge_all()
             self.summary_writer = tf.summary.FileWriter(self.train_logdir, graph=self.sess.graph)
 
-        with tf.name_scope("define_first_stage_train"):
-            print("define_first_stage_train")
-            self.first_stage_trainable_var_list = []
-            for var in tf.trainable_variables():
-                var_name = var.op.name
-                var_name_mess = str(var_name).split('/')
-                if var_name_mess[1] in ['conv_sbbox', 'conv_mbbox', 'conv_lbbox']:
-                    self.first_stage_trainable_var_list.append(var)
+        with tf.name_scope('define_train'):
+            print("defining train...")
+            trainable_var_list = tf.trainable_variables()
+            # optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
+            #                                                                               var_list=trainable_var_list)  # the training step
 
-            first_stage_optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,
-                                                                                        var_list=self.first_stage_trainable_var_list)
-            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-                with tf.control_dependencies([first_stage_optimizer, global_step_update]):
-                    with tf.control_dependencies([moving_ave]):
-                        self.train_op_with_frozen_variables = tf.no_op()
+            # optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
+            #                                                                               var_list=trainable_var_list)
+            optimizer = tf.train.MomentumOptimizer(learning_rate=self.learn_rate, momentum=0.93).minimize(self.loss,
+                                                                                           var_list=trainable_var_list)
 
-        with tf.name_scope("define_second_stage_train"):
-            print("define_second_stage_train")
-            second_stage_trainable_var_list = tf.trainable_variables()
-            second_stage_optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,
-                                                                                         var_list=second_stage_trainable_var_list)
-            # second_stage_optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate).minimize(
-            # self.loss, var_list=second_stage_trainable_var_list)  # the training step
-
-            with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-                with tf.control_dependencies([second_stage_optimizer, global_step_update]):
-                    with tf.control_dependencies([moving_ave]):
+            with tf.control_dependencies(
+                    tf.get_collection(tf.GraphKeys.UPDATE_OPS)):  # normalize batch from the last round
+                with tf.control_dependencies([optimizer, global_step_update]):
+                    with tf.control_dependencies([moving_ave]):  # decay
                         self.train_op_with_all_variables = tf.no_op()
 
         with tf.name_scope('loader_and_saver'):
@@ -139,63 +125,67 @@ class YoloTrain(object):
             self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=10)
 
     def train(self):
+        print("Ready to train!")
         self.sess.run(tf.global_variables_initializer())
 
-        # print('=> Restoring weights...')
-        # self.loader.restore(self.sess, './checkpoint/train_checkpoint/yolov3_test_loss=14.9944.ckpt-700')
-        # print("loaded pretrained model successfully!")
+        print('=> Restoring weights...')
+        self.loader.restore(self.sess, './checkpoint/yolov3_train_loss=67.4069.ckpt-0')
+        print("loaded pretrained model successfully!")
 
-        for epoch in range(1, 1 + self.first_stage_epochs + self.second_stage_epochs):
-            print("epoch: ", epoch)
-            if epoch <= self.first_stage_epochs:
-                train_op = self.train_op_with_frozen_variables
-            else:
-                train_op = self.train_op_with_all_variables
+        print('=> Now it starts to train YOLOV3 ...')
+        for epoch in range(self.epoch):
+            print("epoch number: ", epoch)
+            train_op = self.train_op_with_all_variables
             pbar = tqdm(self.trainset)
             train_epoch_loss, test_epoch_loss = [], []
 
             for train_data in pbar:
-                _, summary, train_step_loss, global_step_val = self.sess.run(
-                    [train_op, self.write_op, self.loss, self.global_step], feed_dict={
-                        self.input_data: train_data[0],
-                        self.label_sbbox: train_data[1],
-                        self.label_mbbox: train_data[2],
-                        self.label_lbbox: train_data[3],
-                        self.true_sbbox: train_data[4],
-                        self.true_mbbox: train_data[5],
-                        self.true_lbbox: train_data[6],
-                        self.trainable: True,
-                    })
+                _, summary, train_step_loss, probL, confL, giouL, lr = self.sess.run([train_op, self.write_op, self.loss, self.prob_loss, self.conf_loss, self.giou_loss, self.learn_rate],
+                                                            feed_dict={self.input_data: train_data[0],
+                                                                       self.label_sbbox: train_data[1],
+                                                                       self.label_mbbox: train_data[2],
+                                                                       self.label_lbbox: train_data[3],
+                                                                       self.true_sbbox: train_data[4],
+                                                                       self.true_mbbox: train_data[5],
+                                                                       self.true_lbbox: train_data[6],
+                                                                       self.trainable: True})
 
+                print("giou_loss: ", giouL, "conf_loss: ", confL, "prob_loss: ", probL)
                 train_epoch_loss.append(train_step_loss)
+                # self.summary_writer.add_summary(summary)
+                # print("learning rate: ", lr)
+                # print("train_step_loss: ", train_step_loss)
                 pbar.set_description("train loss: %.2f" % train_step_loss)
 
-            if epoch != 0 and epoch % 50 == 0:
-                train_epoch_loss, test_epoch_loss = np.mean(train_epoch_loss), np.mean(test_epoch_loss)
-                ckpt_file = "./checkpoint/yolov3_test_loss=%.4f.ckpt" % train_epoch_loss
-                log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
-                print("=> Epoch: %2d Time: %s Train loss: %.2f Test loss: %.2f Saving %s ..."
-                      % (epoch, log_time, train_epoch_loss, test_epoch_loss, ckpt_file))
-                self.saver.save(self.sess, ckpt_file, global_step=epoch)
+                if len(train_epoch_loss) != 0 and len(train_epoch_loss) % 10 == 0:
+                    ckpt_file = "./checkpoint/yolov3_train_loss=%.4f.ckpt" % train_step_loss
+                    log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+                    print("=> Epoch: %2d Time: %s Train loss: %.2f  Saving %s ..."
+                          % (epoch, log_time, train_step_loss, ckpt_file))
+                    self.saver.save(self.sess, ckpt_file, global_step=epoch)
 
-            # for test_data in self.testset:
-            #     test_step_loss = self.sess.run(self.loss, feed_dict={
-            #         self.input_data: test_data[0],
-            #         self.label_sbbox: test_data[1],
-            #         self.label_mbbox: test_data[2],
-            #         self.label_lbbox: test_data[3],
-            #         self.true_sbbox: test_data[4],
-            #         self.true_mbbox: test_data[5],
-            #         self.true_lbbox: test_data[6],
-            #         self.trainable: False,
-            #     })
-            #
-            #     test_epoch_loss.append(test_step_loss)
-            #
-            # train_epoch_loss, test_epoch_loss = np.mean(train_epoch_loss), np.mean(test_epoch_loss)
-            # ckpt_file = "./checkpoint/yolov3_test_loss=%.4f.ckpt" % test_epoch_loss
-            # log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
-            # self.saver.save(self.sess, ckpt_file, global_step=epoch)
+
+            # # if epoch != 0 and epoch % 1 == 0:
+            train_epoch_loss, test_epoch_loss = np.mean(train_epoch_loss), np.mean(test_epoch_loss)
+            ckpt_file = "./checkpoint/yolov3_test_loss=%.4f.ckpt" % train_epoch_loss
+            log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+            print("=> Epoch: %2d Time: %s Train loss: %.2f Saving %s ..."
+                  % (epoch, log_time, train_epoch_loss, ckpt_file))
+            self.saver.save(self.sess, ckpt_file, global_step=epoch)
+
+            for test_data in self.testset:
+                test_step_loss = self.sess.run(self.loss, feed_dict={
+                    self.input_data: test_data[0],
+                    self.label_sbbox: test_data[1],
+                    self.label_mbbox: test_data[2],
+                    self.label_lbbox: test_data[3],
+                    self.true_sbbox: test_data[4],
+                    self.true_mbbox: test_data[5],
+                    self.true_lbbox: test_data[6],
+                    self.trainable: False
+                })
+                print("test_step_loss: ", test_step_loss)
+                # test_epoch_loss.append(test_step_loss)
 
 
 if __name__ == "__main__":
