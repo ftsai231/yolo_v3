@@ -105,13 +105,13 @@ class YoloTrain(object):
         with tf.name_scope('define_train'):
             print("defining train...")
             trainable_var_list = tf.trainable_variables()
-            # optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
-            #                                                                               var_list=trainable_var_list)  # the training step
+            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
+                                                                                          var_list=trainable_var_list)  # the training step
 
             # optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
             #                                                                               var_list=trainable_var_list)
-            optimizer = tf.train.MomentumOptimizer(learning_rate=self.learn_rate, momentum=0.93).minimize(self.loss,
-                                                                                           var_list=trainable_var_list)
+            # optimizer = tf.train.MomentumOptimizer(learning_rate=self.learn_rate, momentum=0.9).minimize(self.loss,
+            #                                                                                var_list=trainable_var_list)
 
             with tf.control_dependencies(
                     tf.get_collection(tf.GraphKeys.UPDATE_OPS)):  # normalize batch from the last round
@@ -129,7 +129,7 @@ class YoloTrain(object):
         self.sess.run(tf.global_variables_initializer())
 
         print('=> Restoring weights...')
-        self.loader.restore(self.sess, './checkpoint/yolov3_train_loss=67.4069.ckpt-0')
+        self.loader.restore(self.sess, './checkpoint/yolov3_test_loss=6.8568.ckpt-0')
         print("loaded pretrained model successfully!")
 
         print('=> Now it starts to train YOLOV3 ...')
@@ -152,12 +152,9 @@ class YoloTrain(object):
 
                 print("giou_loss: ", giouL, "conf_loss: ", confL, "prob_loss: ", probL)
                 train_epoch_loss.append(train_step_loss)
-                # self.summary_writer.add_summary(summary)
-                # print("learning rate: ", lr)
-                # print("train_step_loss: ", train_step_loss)
                 pbar.set_description("train loss: %.2f" % train_step_loss)
 
-                if len(train_epoch_loss) != 0 and len(train_epoch_loss) % 10 == 0:
+                if len(train_epoch_loss) != 0 and len(train_epoch_loss) % 30 == 0:
                     ckpt_file = "./checkpoint/yolov3_train_loss=%.4f.ckpt" % train_step_loss
                     log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
                     print("=> Epoch: %2d Time: %s Train loss: %.2f  Saving %s ..."
@@ -173,18 +170,18 @@ class YoloTrain(object):
                   % (epoch, log_time, train_epoch_loss, ckpt_file))
             self.saver.save(self.sess, ckpt_file, global_step=epoch)
 
-            for test_data in self.testset:
-                test_step_loss = self.sess.run(self.loss, feed_dict={
-                    self.input_data: test_data[0],
-                    self.label_sbbox: test_data[1],
-                    self.label_mbbox: test_data[2],
-                    self.label_lbbox: test_data[3],
-                    self.true_sbbox: test_data[4],
-                    self.true_mbbox: test_data[5],
-                    self.true_lbbox: test_data[6],
-                    self.trainable: False
-                })
-                print("test_step_loss: ", test_step_loss)
+            # for test_data in self.testset:
+            #     test_step_loss = self.sess.run(self.loss, feed_dict={
+            #         self.input_data: test_data[0],
+            #         self.label_sbbox: test_data[1],
+            #         self.label_mbbox: test_data[2],
+            #         self.label_lbbox: test_data[3],
+            #         self.true_sbbox: test_data[4],
+            #         self.true_mbbox: test_data[5],
+            #         self.true_lbbox: test_data[6],
+            #         self.trainable: False
+            #     })
+            #     print("test_step_loss: ", test_step_loss)
                 # test_epoch_loss.append(test_step_loss)
 
 

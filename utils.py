@@ -43,56 +43,38 @@ def bbox_iou(boxes1, boxes2):
 
 # 处理后的盒子
 def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
-    """
-    :param pred_bbox: 预测的 bbox
-    :param org_img_shape: 原始图像的 shape
-    :param input_size: 输入的大小
-    :param score_threshold: 得分阈值
-    :return:
-    """
-    valid_scale = [0, np.inf]
+
+    valid_scale=[0, np.inf]
     pred_bbox = np.array(pred_bbox)
 
-    # bbox 坐标
     pred_xywh = pred_bbox[:, 0:4]
-    # pred_coor = pred_bbox[:, 0:4]
-    # bbox 置信度
     pred_conf = pred_bbox[:, 4]
-    # bbox 概率
     pred_prob = pred_bbox[:, 5:]
 
     # # (1) (x, y, w, h) --> (xmin, ymin, xmax, ymax)
     pred_coor = np.concatenate([pred_xywh[:, :2] - pred_xywh[:, 2:] * 0.5,
                                 pred_xywh[:, :2] + pred_xywh[:, 2:] * 0.5], axis=-1)
-
-    # (2) (xmin, ymin, xmax, ymax) -> (xmin_org, ymin_org, xmax_org, ymax_org)
-    org_h, org_w, _ = org_img_shape
+    # # (2) (xmin, ymin, xmax, ymax) -> (xmin_org, ymin_org, xmax_org, ymax_org)
+    org_h, org_w = org_img_shape
     resize_ratio = min(input_size / org_w, input_size / org_h)
 
     dw = (input_size - resize_ratio * org_w) / 2
     dh = (input_size - resize_ratio * org_h) / 2
 
-    # 将预测的 x 的坐标(xmin, xmax) pred_coor[:, 0::2] 减去空白区域 dw 后，
-    # 除以缩放比率，得到原图 x 方向的大小
     pred_coor[:, 0::2] = 1.0 * (pred_coor[:, 0::2] - dw) / resize_ratio
-    # 将预测的 y 的坐标(ymin, ymax) pred_coor[:, 1::2] 减去空白区域 dh 后，
-    # 除以缩放比率，得到原图 y 方向的大小
     pred_coor[:, 1::2] = 1.0 * (pred_coor[:, 1::2] - dh) / resize_ratio
 
-    # (3) clip some boxes those are out of range 处理那些超出原图大小范围的 bboxes
+    # # (3) clip some boxes those are out of range
     pred_coor = np.concatenate([np.maximum(pred_coor[:, :2], [0, 0]),
                                 np.minimum(pred_coor[:, 2:], [org_w - 1, org_h - 1])], axis=-1)
-
-    # 处理不正常的 bbox
     invalid_mask = np.logical_or((pred_coor[:, 0] > pred_coor[:, 2]), (pred_coor[:, 1] > pred_coor[:, 3]))
     pred_coor[invalid_mask] = 0
 
-    # (4) discard some invalid boxes 丢弃无效的 bbox
+    # # (4) discard some invalid boxes
     bboxes_scale = np.sqrt(np.multiply.reduce(pred_coor[:, 2:4] - pred_coor[:, 0:2], axis=-1))
-    # np 的 逻辑 and
     scale_mask = np.logical_and((valid_scale[0] < bboxes_scale), (bboxes_scale < valid_scale[1]))
 
-    # (5) discard some boxes with low scores 丢弃分值过低的 bbox
+    # # (5) discard some boxes with low scores
     classes = np.argmax(pred_prob, axis=-1)
     scores = pred_conf * pred_prob[np.arange(len(pred_coor)), classes]
     score_mask = scores > score_threshold
@@ -135,6 +117,25 @@ def image_preprocess(image, target_size, gt_boxes=None):
         return image_paded, gt_boxes
 
 
+def bboxes_iou(boxes1, boxes2):
+
+    boxes1 = np.array(boxes1)
+    boxes2 = np.array(boxes2)
+
+    boxes1_area = (boxes1[..., 2] - boxes1[..., 0]) * (boxes1[..., 3] - boxes1[..., 1])
+    boxes2_area = (boxes2[..., 2] - boxes2[..., 0]) * (boxes2[..., 3] - boxes2[..., 1])
+
+    left_up       = np.maximum(boxes1[..., :2], boxes2[..., :2])
+    right_down    = np.minimum(boxes1[..., 2:], boxes2[..., 2:])
+
+    inter_section = np.maximum(right_down - left_up, 0.0)
+    inter_area    = inter_section[..., 0] * inter_section[..., 1]
+    union_area    = boxes1_area + boxes2_area - inter_area
+    ious          = np.maximum(1.0 * inter_area / union_area, np.finfo(np.float32).eps)
+
+    return ious
+
+
 def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
     """
     :param bboxes: (xmin, ymin, xmax, ymax, score, class)
@@ -153,7 +154,7 @@ def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
             best_bbox = cls_bboxes[max_ind]
             best_bboxes.append(best_bbox)
             cls_bboxes = np.concatenate([cls_bboxes[: max_ind], cls_bboxes[max_ind + 1:]])
-            iou = bbox_iou(best_bbox[np.newaxis, :4], cls_bboxes[:, :4])
+            iou = bboxes_iou(best_bbox[np.newaxis, :4], cls_bboxes[:, :4])
             weight = np.ones((len(iou),), dtype=np.float32)
 
             assert method in ['nms', 'soft-nms']
@@ -218,3 +219,4 @@ def read_pb_return_tensors(graph, pb_file, return_elements):
         return_elements = tf.import_graph_def(frozen_graph_def,
                                               return_elements=return_elements)
     return return_elements
+

@@ -42,11 +42,12 @@ class YoloV3:
             route1, route2, inputs = darknet53(inputs=inputs, training=training, data_format=self.data_format)
             route, inputs = yolo_conv_block(inputs=inputs, filters=512, training=training, data_format=self.data_format,
                                             name='yolo_conv_block_1')
-            self.detection1, self.conv_lbbox = yolo_detection_layer(inputs, n_classes=self.n_classes,
+            self.conv_lbbox = yolo_detection_layer(inputs, n_classes=self.n_classes,
                                                                     anchors=self.anchors[2],
                                                                     img_size=self.model_size,
                                                                     data_format=self.data_format,
-                                                                    name='con_lbbox_layer')
+                                                                    name='con_lbbox_layer',
+                                                                    strides=self.strides[2])
             inputs = con2d_fixed_padding(route, filters=256, kernel_size=1, data_format=self.data_format, name='conv_lbbox')
             inputs = batch_norm(inputs, training=training, data_format=self.data_format)
             inputs = tf.nn.leaky_relu(inputs, alpha=cfg.YOLO.LEAKY_RELU)
@@ -60,11 +61,12 @@ class YoloV3:
 
             route, inputs = yolo_conv_block(inputs, filters=256, training=training, data_format=self.data_format,
                                             name='yolo_conv_block_2')
-            self.detection2, self.conv_mbbox = yolo_detection_layer(inputs, n_classes=self.n_classes,
+            self.conv_mbbox = yolo_detection_layer(inputs, n_classes=self.n_classes,
                                                                     anchors=self.anchors[1],
                                                                     img_size=self.model_size,
                                                                     data_format=self.data_format,
-                                                                    name='con_mbbox_layer')
+                                                                    name='con_mbbox_layer',
+                                                                    strides=self.strides[1])
             inputs = con2d_fixed_padding(route, filters=128, kernel_size=1, data_format=self.data_format, name='conv_mbbox')
             inputs = batch_norm(inputs, training=training, data_format=self.data_format)
             inputs = tf.nn.leaky_relu(inputs, alpha=cfg.YOLO.LEAKY_RELU)
@@ -74,38 +76,34 @@ class YoloV3:
 
             route, inputs = yolo_conv_block(inputs, filters=128, training=training, data_format=self.data_format,
                                             name='yolo_conv_block_3')
-            self.detection3, self.conv_sbbox = yolo_detection_layer(inputs, n_classes=self.n_classes,
+            self.conv_sbbox = yolo_detection_layer(inputs, n_classes=self.n_classes,
                                                                     anchors=self.anchors[0],
                                                                     img_size=self.model_size,
                                                                     data_format=self.data_format,
-                                                                    name='conv_sbbox')
+                                                                    name='conv_sbbox',
+                                                                    strides=self.strides[0])
 
-            print("self.detection1 shape: ", self.detection1.shape)
-            print("self.detection2 shape: ", self.detection2.shape)
-            print("self.detection3 shape: ", self.detection3.shape)
+            with tf.variable_scope('pred_sbbox'):
+                self.pred_sbbox = self.decode(self.conv_sbbox, self.anchors[0], self.strides[0])
+                print("self.pred_sbbox: ", self.pred_sbbox.shape)
 
-            # detection1 = tf.reshape(self.detection1, [-1, 13 * 13 * 3, 5 + self.n_classes])
-            # detection2 = tf.reshape(self.detection2, [-1, 26 * 26 * 3, 5 + self.n_classes])
-            # detection3 = tf.reshape(self.detection3, [-1, 52 * 52 * 3, 5 + self.n_classes])
+            with tf.variable_scope('pred_mbbox'):
+                self.pred_mbbox = self.decode(self.conv_mbbox, self.anchors[1], self.strides[1])
 
-            detection1 = tf.reshape(self.detection1, [-1, 5 + self.n_classes])
-            detection2 = tf.reshape(self.detection2, [-1, 5 + self.n_classes])
-            detection3 = tf.reshape(self.detection3, [-1, 5 + self.n_classes])
-
-            with tf.variable_scope('pred_bbox'):
-                self.pred_bbox = tf.concat((detection1, detection2, detection3), axis=0)
+            with tf.variable_scope('pred_lbbox'):
+                self.pred_lbbox = self.decode(self.conv_lbbox, self.anchors[2], self.strides[2])
 
     def compute_loss(self, label_sbbox, label_mbbox, label_lbbox, true_sbbox, true_mbbox, true_lbbox):
         with tf.name_scope('smaller_box_loss'):
-            loss_sbbox = self.loss_layer(self.conv_sbbox, self.detection3, label_sbbox, true_sbbox,
+            loss_sbbox = self.loss_layer(self.conv_sbbox, self.pred_sbbox, label_sbbox, true_sbbox,
                                          anchors=self.anchors[0], stride=self.strides[0])
 
         with tf.name_scope('medium_box_loss'):
-            loss_mbbox = self.loss_layer(self.conv_mbbox, self.detection2, label_mbbox, true_mbbox,
+            loss_mbbox = self.loss_layer(self.conv_mbbox, self.pred_mbbox, label_mbbox, true_mbbox,
                                          anchors=self.anchors[1], stride=self.strides[1])
 
         with tf.name_scope('bigger_box_loss'):
-            loss_lbbox = self.loss_layer(self.conv_lbbox, self.detection1, label_lbbox, true_lbbox,
+            loss_lbbox = self.loss_layer(self.conv_lbbox, self.pred_lbbox, label_lbbox, true_lbbox,
                                          anchors=self.anchors[2], stride=self.strides[2])
 
         with tf.name_scope('giou_loss'):
@@ -184,6 +182,40 @@ class YoloV3:
 
         return iou
 
+    def decode(self, conv_output, anchors, stride):
+        """
+        return tensor of shape [batch_size, output_size, output_size, anchor_per_scale, 5 + num_classes]
+               contains (x, y, w, h, score, probability)
+        """
+
+        conv_shape       = tf.shape(conv_output)
+        batch_size       = conv_shape[0]
+        output_size      = conv_shape[1]
+        anchor_per_scale = len(anchors)
+        print("conv_output before reshape: ", conv_output.shape)
+
+        conv_output = tf.reshape(conv_output, (batch_size, output_size, output_size, anchor_per_scale, 5 + self.num_class))
+
+        conv_raw_dxdy = conv_output[:, :, :, :, 0:2]
+        conv_raw_dwdh = conv_output[:, :, :, :, 2:4]
+        conv_raw_conf = conv_output[:, :, :, :, 4:5]
+        conv_raw_prob = conv_output[:, :, :, :, 5: ]
+
+        y = tf.tile(tf.range(output_size, dtype=tf.int32)[:, tf.newaxis], [1, output_size])
+        x = tf.tile(tf.range(output_size, dtype=tf.int32)[tf.newaxis, :], [output_size, 1])
+
+        xy_grid = tf.concat([x[:, :, tf.newaxis], y[:, :, tf.newaxis]], axis=-1)
+        xy_grid = tf.tile(xy_grid[tf.newaxis, :, :, tf.newaxis, :], [batch_size, 1, 1, anchor_per_scale, 1])
+        xy_grid = tf.cast(xy_grid, tf.float32)
+
+        pred_xy = (tf.sigmoid(conv_raw_dxdy) + xy_grid) * stride
+        pred_wh = (tf.exp(conv_raw_dwdh) * anchors) * stride
+        pred_xywh = tf.concat([pred_xy, pred_wh], axis=-1)
+
+        pred_conf = tf.sigmoid(conv_raw_conf)
+        pred_prob = tf.sigmoid(conv_raw_prob)
+
+        return tf.concat([pred_xywh, pred_conf, pred_prob], axis=-1)
 
 if __name__ == "__main__":
     inputs_test = tf.placeholder(tf.float32, [3, 416, 416, 3])

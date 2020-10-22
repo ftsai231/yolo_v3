@@ -24,8 +24,9 @@ class Dataset(object):
         self.anchors = np.array(utils.get_anchors())
         self.anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
         self.max_bbox_per_scale = 150
-        self.img_id_list = self.load_car_person_list()[:10016] if dataset_type == 'train' \
-            else self.load_car_person_list()[10016:10656]
+        self.img_id_list = self.load_car_person_list('train')[5:15] if dataset_type == 'train' \
+            else self.load_car_person_list('test')
+        print("self.img_id_list: ", self.img_id_list)
         self.train_input_size = 416
 
         self.annotations = self.load_annotations()
@@ -80,7 +81,6 @@ class Dataset(object):
                        batch_sbboxes, batch_mbboxes, batch_lbboxes
             else:
                 self.batch_count = 0
-                # np.random.shuffle(self.annotations)
                 raise StopIteration
 
     def load_annotations(self):
@@ -174,8 +174,8 @@ class Dataset(object):
         # print("bboxes after preprocess: ", bboxes)
         return image, bboxes
 
-    def load_car_person_list(self):
-        open_file = open('car_and_person.txt').read()
+    def load_car_person_list(self, data_format):
+        open_file = open('car_and_person_train.txt').read() if data_format == 'train' else open('car_and_person_test.txt').read()
         id_str = ""
         for line in open_file:
             id_str += line
@@ -184,6 +184,8 @@ class Dataset(object):
 
         for i in range(0, len(id_str)):
             id_str[i] = int(id_str[i])
+
+        # random.shuffle(id_str)
         return id_str
 
     def bbox_iou(self, boxes1, boxes2):

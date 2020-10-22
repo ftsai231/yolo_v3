@@ -4,12 +4,15 @@ from config import cfg
 
 def batch_norm(inputs, training, data_format):
     """Performs a batch normalization using a standard set of parameters."""
-    return tf.layers.batch_normalization(inputs, beta_initializer=tf.zeros_initializer(),
-                                                 gamma_initializer=tf.ones_initializer(),
-                                                 moving_mean_initializer=tf.zeros_initializer(),
-                                                 moving_variance_initializer=tf.ones_initializer(), training=training)
+    # return tf.layers.batch_normalization(inputs, beta_initializer=tf.zeros_initializer(),
+    #                                              gamma_initializer=tf.ones_initializer(),
+    #                                              moving_mean_initializer=tf.zeros_initializer(),
+    #                                              moving_variance_initializer=tf.ones_initializer(), training=training)
 
-
+    return tf.layers.batch_normalization(
+            inputs=inputs,
+            momentum=cfg._BATCH_NORM_DECAY, epsilon=cfg._BATCH_NORM_EPSILON,
+            scale=True, training=training)
 
 def fixed_padding(inputs, kernel_size, data_format):
     """ResNet implementation of fixed padding.
@@ -52,7 +55,7 @@ def con2d_fixed_padding(inputs, filters, name, kernel_size, data_format, strides
 def darknet53_residual_block(inputs, filters, training, name, data_format, strides=1):
     with tf.variable_scope(name):
         residual = inputs
-        inputs = con2d_fixed_padding(inputs, filters, kernel_size=1, strides=strides, data_format=data_format,
+        inputs = con2d_fixed_padding(inputs, filters=filters, kernel_size=1, strides=strides, data_format=data_format,
                                      name='residual_conv_1')
         inputs = batch_norm(inputs, training, data_format)
         inputs = tf.nn.leaky_relu(inputs, alpha=cfg.YOLO.LEAKY_RELU)
@@ -81,7 +84,7 @@ def darknet53(inputs, training, data_format):
     inputs = darknet53_residual_block(inputs, filters=32, training=training, data_format=data_format,
                                       name='darknet53_residual_block_1')
 
-    inputs = con2d_fixed_padding(inputs, filters=128, kernel_size=3, data_format=data_format, strides=2,
+    inputs = con2d_fixed_padding(inputs, filters=128, kernel_size=3, strides=2, data_format=data_format,
                                  name='darknet_con2d_fixed_padding_3')
     inputs = batch_norm(inputs, training, data_format)
     inputs = tf.nn.leaky_relu(inputs, alpha=cfg.YOLO.LEAKY_RELU)
@@ -120,8 +123,6 @@ def darknet53(inputs, training, data_format):
     for i in range(4):
         name = 'darknet53_residual_block_4_' + str(i)
         inputs = darknet53_residual_block(inputs, filters=512, training=training, data_format=data_format, name=name)
-
-    # inputs = con2d_fixed_padding(inputs, filters=512, kernel_size=1, data_format=data_format, name='conv_n')
 
     return route1, route2, inputs
 
@@ -163,62 +164,60 @@ def yolo_conv_block(inputs, filters, training, data_format, name):
     return route, inputs
 
 
-def yolo_detection_layer(inputs, n_classes, anchors, img_size, data_format, name):
+def yolo_detection_layer(inputs, n_classes, anchors, img_size, data_format, name, strides):
     n_anchors = len(anchors)
 
     # detection kernel
     inputs = tf.layers.conv2d(inputs, filters=n_anchors * (5 + n_classes), kernel_size=1, strides=1, use_bias=True,
                               data_format=data_format)
 
-    # batch_size = inputs.shape[0]
-    # output_size = inputs.shape[1]
-    # n_classes = cfg.TRAIN.N_CLASSES
-    # anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
-    #
-    # conv_bbox = tf.reshape(inputs, (batch_size, output_size, output_size, anchor_per_scale, 5 + n_classes))
+    #############
+    batch_size = inputs.shape[0]
+    output_size = inputs.shape[1]
+    n_classes = cfg.TRAIN.N_CLASSES
+    anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
+    #############
 
     shape = inputs.get_shape().as_list()
     grid_shape = shape[2:4] if data_format == 'channels_first' else shape[1:3]
     # print("grid shape: ", grid_shape)
     if data_format == 'channels_first':
         inputs = tf.transpose(inputs, [0, 2, 3, 1])
-
-    inputs = tf.reshape(inputs, [-1, grid_shape[0], grid_shape[0], n_anchors, 5 + n_classes])
+    print("inputs before reshape: ", inputs.shape)
 
     conv_bbox = inputs
-
-    strides = (img_size[0] // grid_shape[0], img_size[1] // grid_shape[1])
-
-    box_center, box_shapes, confidence, classes = tf.split(inputs, [2, 2, 1, n_classes], axis=-1)
-
-    # conv_bbox = tf.concat([box_center, box_shapes, confidence, classes], axis=-1)
-
-    x = tf.range(grid_shape[0], dtype=tf.float32)
-    y = tf.range(grid_shape[1], dtype=tf.float32)
-    x_offset, y_offset = tf.meshgrid(x, y)
-    x_offset = tf.reshape(x_offset, (-1, 1))
-    y_offset = tf.reshape(y_offset, (-1, 1))
-    x_y_offset = tf.concat([x_offset, y_offset], axis=-1)
-    x_y_offset = tf.tile(x_y_offset, [1, n_anchors])
-    x_y_offset = tf.reshape(x_y_offset, [1, grid_shape[0], grid_shape[0], n_anchors, 2])
-    box_centers = tf.nn.sigmoid(box_center)
-    box_centers = (box_centers + x_y_offset) * strides
-
-    anchors = tf.tile(anchors, [grid_shape[0] * grid_shape[1], 1])
-    anchors = tf.reshape(anchors, [grid_shape[0], grid_shape[1], n_anchors, 2])
-    box_shapes = tf.exp(box_shapes) * tf.to_float(anchors)
-
-    confidence = tf.nn.sigmoid(confidence)
-
-    classes = tf.nn.sigmoid(classes)
-
-    with tf.variable_scope(name):
-        inputs = tf.concat([box_centers, box_shapes, confidence, classes], axis=-1)
+    #
+    # ########################
+    # inputs = tf.reshape(inputs, [-1, grid_shape[0], grid_shape[0], anchor_per_scale, 5 + n_classes])
+    # strides = (img_size[0] // grid_shape[0], img_size[1] // grid_shape[1])
+    #
+    # box_center, box_shapes, confidence, classes = tf.split(inputs, [2, 2, 1, n_classes], axis=-1)
+    #
+    # x = tf.range(grid_shape[0], dtype=tf.float32)
+    # y = tf.range(grid_shape[1], dtype=tf.float32)
+    # x_offset, y_offset = tf.meshgrid(x, y)
+    # x_offset = tf.reshape(x_offset, (-1, 1))
+    # y_offset = tf.reshape(y_offset, (-1, 1))
+    # x_y_offset = tf.concat([x_offset, y_offset], axis=-1)
+    # x_y_offset = tf.tile(x_y_offset, [1, n_anchors])
+    # x_y_offset = tf.reshape(x_y_offset, [1, grid_shape[0], grid_shape[0], n_anchors, 2])
+    # box_centers = tf.nn.sigmoid(box_center)
+    # box_centers = (box_centers + x_y_offset) * strides
+    #
+    # anchors = tf.tile(anchors, [grid_shape[0] * grid_shape[1], 1])
+    # anchors = tf.reshape(anchors, [grid_shape[0], grid_shape[1], n_anchors, 2])
+    # box_shapes = tf.exp(box_shapes) * tf.to_float(anchors)
+    #
+    # confidence = tf.nn.sigmoid(confidence)
+    #
+    # classes = tf.nn.sigmoid(classes)
+    #
+    # with tf.variable_scope(name):
+    #     inputs = tf.concat([box_centers, box_shapes, confidence, classes], axis=-1)
 
     #####
 
-    # strides = int(img_size[0] // output_size)
-    # # 原始网络输出的(x, y, w, h, score, probability)
+    # 原始网络输出的(x, y, w, h, score, probability)
     # conv_raw_dxdy = conv_bbox[:, :, :, :, 0:2]  # 中心位置的偏移量 x,y
     # conv_raw_dwdh = conv_bbox[:, :, :, :, 2:4]  # 预测框长宽的偏移量 w,h
     # conv_raw_conf = conv_bbox[:, :, :, :, 4:5]  # 预测框的置信度 score
@@ -264,7 +263,7 @@ def yolo_detection_layer(inputs, n_classes, anchors, img_size, data_format, name
     # pred_prob = tf.sigmoid(conv_raw_prob)
     # inputs = tf.concat([pred_xywh, pred_conf, pred_prob], axis=-1)
 
-    return inputs, conv_bbox
+    return conv_bbox
 
 
 def upsample(inputs, out_shape, data_format):

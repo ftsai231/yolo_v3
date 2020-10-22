@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 from pycocotools.coco import COCO
 from config import cfg
@@ -8,22 +10,31 @@ catIds_person = coco.getCatIds(catNms=['person'])
 imgIds_person = coco.getImgIds(catIds=catIds_person)
 images_person = coco.loadImgs(imgIds_person)
 print("type(images_person): ", type(images_person))
-print(len(images_person))
+print(len(images_person))    # 45174
 
 catIds_car = coco.getCatIds(catNms=['car'])
 imgIds_car = coco.getImgIds(catIds=catIds_car)
 images_car = coco.loadImgs(imgIds_car)
 print("type(images_car): ", type(images_car))
-print(len(images_car))
+print(len(images_car))     # 8606
 
-car_and_person = imgIds_person[:10000] + imgIds_car[:10000]
+car_and_person = imgIds_person[:8606] + imgIds_car[:8606]
 # print(car_and_person)
 print("car_and_person:", len(car_and_person))
+# random.shuffle(car_and_person)
+
+train_set = imgIds_person[:7000] + imgIds_car[:7000]
+test_set = imgIds_person[7000:] + imgIds_car[7000:]
+
+random.shuffle(train_set)
+random.shuffle(test_set)
 
 # TODO: writing the list to txt file. DO NOT DELETE THE COMMENTED CODE!
-# with open('car_and_person.txt', 'w') as output:
-#     output.write(str(car_and_person).strip("[]"))
+with open('car_and_person_train.txt', 'w') as output:
+    output.write(str(train_set).strip("[]"))
 
+with open('car_and_person_test.txt', 'w') as output:
+    output.write(str(test_set).strip("[]"))
 
 # TODO: saving the photos. DO NOT DELETE THE COMMENTED CODE!
 # arr = os.listdir('/Users/JTSAI1/Documents/ADAI/train2014')

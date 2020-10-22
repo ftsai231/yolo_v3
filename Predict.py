@@ -10,7 +10,7 @@ class YoloPredict(object):
     def __init__(self):
         self.classes = utils.read_class_names(cfg.YOLO.CLASSES)
         self.moving_ave_decay = cfg.YOLO.MOVING_AVE_DECAY
-        self.weights_path = './checkpoint/train_checkpoint/'
+        self.weights_path = './checkpoint/'
         ckpt = tf.train.get_checkpoint_state(self.weights_path)
         self.input_size = cfg.TRAIN.INPUT_SIZE
         self.model_size = cfg.YOLO.MODEL_SIZE
@@ -44,7 +44,7 @@ class YoloPredict(object):
             self.input: image_data,
             self.training: False
         })
-        pred_bbox = np.array(pred_bbox[0][0])
+        pred_bbox = np.array(pred_bbox[0])
         pred_bbox = utils.postprocess_boxes(pred_bbox, image_shape, 416, 0.5)
         print("pred_bbox shape: ", pred_bbox.shape)
 
