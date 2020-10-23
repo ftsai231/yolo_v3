@@ -24,9 +24,8 @@ class Dataset(object):
         self.anchors = np.array(utils.get_anchors())
         self.anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
         self.max_bbox_per_scale = 150
-        self.img_id_list = self.load_car_person_list('train')[5:15] if dataset_type == 'train' \
+        self.img_id_list = self.load_car_person_list('train') if dataset_type == 'train' \
             else self.load_car_person_list('test')
-        print("self.img_id_list: ", self.img_id_list)
         self.train_input_size = 416
 
         self.annotations = self.load_annotations()
@@ -40,7 +39,6 @@ class Dataset(object):
     def __next__(self):
 
         with tf.device('/cpu:0'):
-            # self.train_input_size = random.choice(self.train_input_sizes)
             self.train_output_sizes = self.train_input_size // self.strides
 
             batch_image = np.zeros((self.batch_size, self.train_input_size, self.train_input_size, 3))
@@ -163,8 +161,8 @@ class Dataset(object):
 
                 x_bottom_right = x_top_left + w
                 y_bottom_right = y_top_left + h
-                x_top_left, y_top_left, x_bottom_right, y_bottom_right = int(x_top_left), int(y_top_left), int(
-                    x_bottom_right), int(y_bottom_right)
+                x_top_left, y_top_left, x_bottom_right, y_bottom_right, c = int(x_top_left), int(y_top_left), int(
+                    x_bottom_right), int(y_bottom_right), int(c)
                 bboxes.append([x_top_left, y_top_left, x_bottom_right, y_bottom_right, c])
 
         bboxes = np.array(bboxes)
@@ -185,7 +183,7 @@ class Dataset(object):
         for i in range(0, len(id_str)):
             id_str[i] = int(id_str[i])
 
-        # random.shuffle(id_str)
+        random.shuffle(id_str)
         return id_str
 
     def bbox_iou(self, boxes1, boxes2):
@@ -208,7 +206,7 @@ class Dataset(object):
         inter_area = inter_section[..., 0] * inter_section[..., 1]
         union_area = boxes1_area + boxes2_area - inter_area
 
-        return inter_area / np.maximum(union_area, 1e-10)
+        return inter_area / np.maximum(union_area, 1e-7)
 
     def preprocess_true_boxes(self, bboxes):
 
@@ -236,10 +234,11 @@ class Dataset(object):
                 anchors_xywh = np.zeros((self.anchor_per_scale, 4))
                 anchors_xywh[:, 0:2] = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32) + 0.5
                 anchors_xywh[:, 2:4] = self.anchors[i]
+                # print("anchors_xywh[:, 2:4]: ", anchors_xywh[:, 2:4])
 
                 iou_scale = self.bbox_iou(bbox_xywh_scaled[i][np.newaxis, :], anchors_xywh)
                 iou.append(iou_scale)
-                iou_mask = iou_scale > 0.3
+                iou_mask = iou_scale > 0.5
 
                 if np.any(iou_mask):
                     xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)

@@ -36,7 +36,7 @@ def bbox_iou(boxes1, boxes2):
     inter_section = np.maximum(right_down - left_up, 0.0)
     inter_area = inter_section[..., 0] * inter_section[..., 1]
     union_area = boxes1_area + boxes2_area - inter_area
-    iou = 1.0 * inter_area / np.maximum(union_area, 1e-10)
+    iou = 1.0 * inter_area / np.maximum(union_area, 1e-7)
 
     return iou
 

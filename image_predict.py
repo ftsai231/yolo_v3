@@ -7,7 +7,7 @@ from PIL import Image
 return_elements = ["input/input_data:0", "yolo_v3_model/pred_sbbox/concat_2:0", "yolo_v3_model/pred_mbbox/concat_2:0",
                      "yolo_v3_model/pred_lbbox/concat_2:0"]
 pb_file         = "./yolov3_coco.pb"
-image_path      = "./264241.jpg"
+image_path      = "./576527.jpg"
 num_classes     = 2
 input_size      = 416
 graph           = tf.Graph()
@@ -32,7 +32,7 @@ pred_bbox = np.concatenate([np.reshape(pred_sbbox, (-1, 5 + num_classes)),
                             np.reshape(pred_mbbox, (-1, 5 + num_classes)),
                             np.reshape(pred_lbbox, (-1, 5 + num_classes))], axis=0)
 
-bboxes = utils.postprocess_boxes(pred_bbox, original_image_size, input_size, 0.2)
+bboxes = utils.postprocess_boxes(pred_bbox, original_image_size, input_size, 0.13)
 bboxes = utils.nms(bboxes, 0.45, method='nms')
 image = utils.draw_bbox(original_image, bboxes)
 image = Image.fromarray(image)

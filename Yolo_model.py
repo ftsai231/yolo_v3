@@ -343,13 +343,16 @@ def bbox_giou(boxes1, boxes2):
     inter_section = tf.maximum(right_down - left_up, 0.0)
     inter_area = inter_section[..., 0] * inter_section[..., 1]
     union_area = boxes1_area + boxes2_area - inter_area
-    iou = inter_area / tf.maximum(union_area, 1e-10)
+    iou = inter_area / tf.maximum(union_area, 1e-7)
 
     enclose_left_up = tf.minimum(boxes1[..., :2], boxes2[..., :2])
     enclose_right_down = tf.maximum(boxes1[..., 2:], boxes2[..., 2:])
     enclose = tf.maximum(enclose_right_down - enclose_left_up, 0.0)
     enclose_area = enclose[..., 0] * enclose[..., 1]
-    giou = iou - 1.0 * (enclose_area - union_area) / tf.maximum(enclose_area, 1e-10)
+    giou = iou - 1.0 * (enclose_area - union_area) / tf.maximum(enclose_area, 1e-7)
+    if tf.is_nan(giou) is True:
+        print("giou is nan!")
+        print("enclose_area: ", enclose_area)
 
     return giou
 

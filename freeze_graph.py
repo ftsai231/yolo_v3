@@ -2,7 +2,7 @@ import tensorflow as tf
 from Yolo import YoloV3
 
 pb_file = "./yolov3_coco.pb"
-ckpt_file = "./checkpoint/yolov3_test_loss=6.9487.ckpt-36"
+ckpt_file = "./checkpoint/yolov3_test_loss=7.1838.ckpt-26"
 output_node_names = ["input/input_data", "yolo_v3_model/pred_sbbox/concat_2", "yolo_v3_model/pred_mbbox/concat_2",
                      "yolo_v3_model/pred_lbbox/concat_2"]
 

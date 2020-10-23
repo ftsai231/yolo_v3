@@ -105,19 +105,19 @@ class YoloTrain(object):
         with tf.name_scope('define_train'):
             print("defining train...")
             trainable_var_list = tf.trainable_variables()
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
-                                                                                          var_list=trainable_var_list)  # the training step
+            # optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
+            #                                                                               var_list=trainable_var_list)  # the training step
 
             # optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
             #                                                                               var_list=trainable_var_list)
-            # optimizer = tf.train.MomentumOptimizer(learning_rate=self.learn_rate, momentum=0.9).minimize(self.loss,
-            #                                                                                var_list=trainable_var_list)
+            optimizer = tf.train.MomentumOptimizer(learning_rate=self.learn_rate, momentum=0.9).minimize(self.loss,
+                                                                                           var_list=trainable_var_list)
 
             with tf.control_dependencies(
                     tf.get_collection(tf.GraphKeys.UPDATE_OPS)):  # normalize batch from the last round
                 with tf.control_dependencies([optimizer, global_step_update]):
-                    with tf.control_dependencies([moving_ave]):  # decay
-                        self.train_op_with_all_variables = tf.no_op()
+                    # with tf.control_dependencies([moving_ave]):  # decay
+                    self.train_op_with_all_variables = tf.no_op()
 
         with tf.name_scope('loader_and_saver'):
             print("defining loader and saver...")
@@ -128,9 +128,9 @@ class YoloTrain(object):
         print("Ready to train!")
         self.sess.run(tf.global_variables_initializer())
 
-        print('=> Restoring weights...')
-        self.loader.restore(self.sess, './checkpoint/yolov3_test_loss=6.8568.ckpt-0')
-        print("loaded pretrained model successfully!")
+        # print('=> Restoring weights...')
+        # self.loader.restore(self.sess, './checkpoint/yolov3_train_loss=69.9723.ckpt-0')
+        # print("loaded pretrained model successfully!")
 
         print('=> Now it starts to train YOLOV3 ...')
         for epoch in range(self.epoch):
@@ -140,7 +140,7 @@ class YoloTrain(object):
             train_epoch_loss, test_epoch_loss = [], []
 
             for train_data in pbar:
-                _, summary, train_step_loss, probL, confL, giouL, lr = self.sess.run([train_op, self.write_op, self.loss, self.prob_loss, self.conf_loss, self.giou_loss, self.learn_rate],
+                _, summary, train_step_loss, probL, confL, giouL = self.sess.run([train_op, self.write_op, self.loss, self.prob_loss, self.conf_loss, self.giou_loss],
                                                             feed_dict={self.input_data: train_data[0],
                                                                        self.label_sbbox: train_data[1],
                                                                        self.label_mbbox: train_data[2],
@@ -154,12 +154,12 @@ class YoloTrain(object):
                 train_epoch_loss.append(train_step_loss)
                 pbar.set_description("train loss: %.2f" % train_step_loss)
 
-                if len(train_epoch_loss) != 0 and len(train_epoch_loss) % 30 == 0:
-                    ckpt_file = "./checkpoint/yolov3_train_loss=%.4f.ckpt" % train_step_loss
-                    log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
-                    print("=> Epoch: %2d Time: %s Train loss: %.2f  Saving %s ..."
-                          % (epoch, log_time, train_step_loss, ckpt_file))
-                    self.saver.save(self.sess, ckpt_file, global_step=epoch)
+                # if len(train_epoch_loss) != 0 and len(train_epoch_loss) % 1 == 0:
+                ckpt_file = "./checkpoint/yolov3_train_loss=%.4f.ckpt" % train_step_loss
+                log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+                print("=> Epoch: %2d Time: %s Train loss: %.2f  Saving %s ..."
+                      % (epoch, log_time, train_step_loss, ckpt_file))
+                self.saver.save(self.sess, ckpt_file, global_step=epoch)
 
 
             # # if epoch != 0 and epoch % 1 == 0:
