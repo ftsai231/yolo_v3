@@ -23,8 +23,11 @@ car_and_person = imgIds_person[:8606] + imgIds_car[:8606]
 print("car_and_person:", len(car_and_person))
 # random.shuffle(car_and_person)
 
-train_set = imgIds_person[:7000] + imgIds_car[:7000]
-test_set = imgIds_person[7000:] + imgIds_car[7000:]
+train_set = imgIds_person[:3500] + imgIds_car[:3500]
+test_set = imgIds_person[3500:4000] + imgIds_car[3500:4000]
+print(len(train_set))
+print(len(test_set))
+
 
 random.shuffle(train_set)
 random.shuffle(test_set)

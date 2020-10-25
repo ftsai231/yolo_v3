@@ -32,7 +32,7 @@ pred_bbox = np.concatenate([np.reshape(pred_sbbox, (-1, 5 + num_classes)),
                             np.reshape(pred_mbbox, (-1, 5 + num_classes)),
                             np.reshape(pred_lbbox, (-1, 5 + num_classes))], axis=0)
 
-bboxes = utils.postprocess_boxes(pred_bbox, original_image_size, input_size, 0.13)
+bboxes = utils.postprocess_boxes(pred_bbox, original_image_size, input_size, 0.1)
 bboxes = utils.nms(bboxes, 0.45, method='nms')
 image = utils.draw_bbox(original_image, bboxes)
 image = Image.fromarray(image)

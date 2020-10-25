@@ -29,7 +29,7 @@ class YoloTrain(object):
         self.moving_ave_decay = cfg.YOLO.MOVING_AVE_DECAY
         self.max_bbox_per_scale = cfg.YOLO.MAX_OUTPUT_SIZE
 
-        self.train_logdir = "./train_log/mydata_test1/"
+        self.train_logdir = "./train_log/"
         self.trainset = Dataset('train')
         self.testset = Dataset('test')
         self.steps_per_period = len(self.trainset)
@@ -55,11 +55,14 @@ class YoloTrain(object):
             print("defining loss...")
             self.model = YoloV3(inputs=self.input_data, training=self.trainable)
             self.network_para = tf.global_variables()
-            self.giou_loss, self.conf_loss, self.prob_loss = \
+            self.giou_loss, self.conf_loss, self.prob_loss, self.debug = \
                 self.model.compute_loss(self.label_sbbox, self.label_mbbox, self.label_lbbox, self.true_sbbox,
                                         self.true_mbbox, self.true_lbbox)
+            # print("self.giou_loss: ", self.giou_loss, " self.conf_loss: ", self.conf_loss, " self.prob_loss: ", self.prob_loss)
 
-            self.loss = self.giou_loss + self.conf_loss + self.prob_loss
+            # self.loss = self.giou_loss + self.conf_loss + self.prob_loss
+            new_giou_loss = self.debug[4] + self.debug[9] + self.debug[14]
+            self.loss = new_giou_loss + self.conf_loss + self.prob_loss
 
         # TODO: change this part if training doesnt do good
         with tf.name_scope('define_learning_rate'):
@@ -105,19 +108,19 @@ class YoloTrain(object):
         with tf.name_scope('define_train'):
             print("defining train...")
             trainable_var_list = tf.trainable_variables()
-            # optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
-            #                                                                               var_list=trainable_var_list)  # the training step
+            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
+                                                                                          var_list=trainable_var_list)  # the training step
 
             # optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate).minimize(self.loss,
             #                                                                               var_list=trainable_var_list)
-            optimizer = tf.train.MomentumOptimizer(learning_rate=self.learn_rate, momentum=0.9).minimize(self.loss,
-                                                                                           var_list=trainable_var_list)
+            # optimizer = tf.train.MomentumOptimizer(learning_rate=self.learn_rate, momentum=0.9).minimize(self.loss,
+            #                                                                                var_list=trainable_var_list)
 
             with tf.control_dependencies(
                     tf.get_collection(tf.GraphKeys.UPDATE_OPS)):  # normalize batch from the last round
                 with tf.control_dependencies([optimizer, global_step_update]):
-                    # with tf.control_dependencies([moving_ave]):  # decay
-                    self.train_op_with_all_variables = tf.no_op()
+                    with tf.control_dependencies([moving_ave]):  # decay
+                        self.train_op_with_all_variables = tf.no_op()
 
         with tf.name_scope('loader_and_saver'):
             print("defining loader and saver...")
@@ -125,11 +128,12 @@ class YoloTrain(object):
             self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=10)
 
     def train(self):
+        np.set_printoptions(threshold=np.inf)
         print("Ready to train!")
         self.sess.run(tf.global_variables_initializer())
 
         # print('=> Restoring weights...')
-        # self.loader.restore(self.sess, './checkpoint/yolov3_train_loss=69.9723.ckpt-0')
+        # self.loader.restore(self.sess, './checkpoint/yolov3_train_loss=70.6799.ckpt-0')
         # print("loaded pretrained model successfully!")
 
         print('=> Now it starts to train YOLOV3 ...')
@@ -138,9 +142,10 @@ class YoloTrain(object):
             train_op = self.train_op_with_all_variables
             pbar = tqdm(self.trainset)
             train_epoch_loss, test_epoch_loss = [], []
+            open("debug.txt", "w").close()
 
             for train_data in pbar:
-                _, summary, train_step_loss, probL, confL, giouL = self.sess.run([train_op, self.write_op, self.loss, self.prob_loss, self.conf_loss, self.giou_loss],
+                _, summary, train_step_loss, probL, confL, giouL, debug = self.sess.run([train_op, self.write_op, self.loss, self.prob_loss, self.conf_loss, self.giou_loss, self.debug],
                                                             feed_dict={self.input_data: train_data[0],
                                                                        self.label_sbbox: train_data[1],
                                                                        self.label_mbbox: train_data[2],
@@ -149,6 +154,10 @@ class YoloTrain(object):
                                                                        self.true_mbbox: train_data[5],
                                                                        self.true_lbbox: train_data[6],
                                                                        self.trainable: True})
+                # print("debug: ", debug)
+                with open('debug.txt', 'a') as output:
+                    log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+                    output.write(str(log_time) + "\n" + str(debug))
 
                 print("giou_loss: ", giouL, "conf_loss: ", confL, "prob_loss: ", probL)
                 train_epoch_loss.append(train_step_loss)

@@ -26,6 +26,7 @@ class Dataset(object):
         self.max_bbox_per_scale = 150
         self.img_id_list = self.load_car_person_list('train') if dataset_type == 'train' \
             else self.load_car_person_list('test')
+        # print("self.img_id_list: ", self.img_id_list)
         self.train_input_size = 416
 
         self.annotations = self.load_annotations()
@@ -38,48 +39,48 @@ class Dataset(object):
 
     def __next__(self):
 
-        with tf.device('/cpu:0'):
-            self.train_output_sizes = self.train_input_size // self.strides
+        # with tf.device('/cpu:0'):
+        self.train_output_sizes = self.train_input_size // self.strides
 
-            batch_image = np.zeros((self.batch_size, self.train_input_size, self.train_input_size, 3))
+        batch_image = np.zeros((self.batch_size, self.train_input_size, self.train_input_size, 3))
 
-            batch_label_sbbox = np.zeros((self.batch_size, self.train_output_sizes[0], self.train_output_sizes[0],
-                                          self.anchor_per_scale, 5 + self.num_classes))
-            batch_label_mbbox = np.zeros((self.batch_size, self.train_output_sizes[1], self.train_output_sizes[1],
-                                          self.anchor_per_scale, 5 + self.num_classes))
-            batch_label_lbbox = np.zeros((self.batch_size, self.train_output_sizes[2], self.train_output_sizes[2],
-                                          self.anchor_per_scale, 5 + self.num_classes))
+        batch_label_sbbox = np.zeros((self.batch_size, self.train_output_sizes[0], self.train_output_sizes[0],
+                                      self.anchor_per_scale, 5 + self.num_classes))
+        batch_label_mbbox = np.zeros((self.batch_size, self.train_output_sizes[1], self.train_output_sizes[1],
+                                      self.anchor_per_scale, 5 + self.num_classes))
+        batch_label_lbbox = np.zeros((self.batch_size, self.train_output_sizes[2], self.train_output_sizes[2],
+                                      self.anchor_per_scale, 5 + self.num_classes))
 
-            batch_sbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
-            batch_mbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
-            batch_lbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
+        batch_sbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
+        batch_mbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
+        batch_lbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
 
-            num = 0
-            if self.batch_count < self.num_batchs:
-                while num < self.batch_size:
-                    index = self.batch_count * self.batch_size + num
-                    if index >= self.num_samples: index -= self.num_samples
-                    # annotation = self.annotations[index]
-                    id = self.img_id_list[index]
+        num = 0
+        if self.batch_count < self.num_batchs:
+            while num < self.batch_size:
+                index = self.batch_count * self.batch_size + num
+                if index >= self.num_samples: index -= self.num_samples
+                # annotation = self.annotations[index]
+                id = self.img_id_list[index]
 
-                    # bboxes: xmin, ymin, xmax, ymax
-                    image, bboxes = self.parse_annotations(self.annotations, id)
-                    label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = self.preprocess_true_boxes(bboxes)
+                # bboxes: xmin, ymin, xmax, ymax
+                image, bboxes = self.parse_annotations(self.annotations, id)
+                label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = self.preprocess_true_boxes(bboxes)
 
-                    batch_image[num, :, :, :] = image
-                    batch_label_sbbox[num, :, :, :, :] = label_sbbox
-                    batch_label_mbbox[num, :, :, :, :] = label_mbbox
-                    batch_label_lbbox[num, :, :, :, :] = label_lbbox
-                    batch_sbboxes[num, :, :] = sbboxes
-                    batch_mbboxes[num, :, :] = mbboxes
-                    batch_lbboxes[num, :, :] = lbboxes
-                    num += 1
-                self.batch_count += 1
-                return batch_image, batch_label_sbbox, batch_label_mbbox, batch_label_lbbox, \
-                       batch_sbboxes, batch_mbboxes, batch_lbboxes
-            else:
-                self.batch_count = 0
-                raise StopIteration
+                batch_image[num, :, :, :] = image
+                batch_label_sbbox[num, :, :, :, :] = label_sbbox
+                batch_label_mbbox[num, :, :, :, :] = label_mbbox
+                batch_label_lbbox[num, :, :, :, :] = label_lbbox
+                batch_sbboxes[num, :, :] = sbboxes
+                batch_mbboxes[num, :, :] = mbboxes
+                batch_lbboxes[num, :, :] = lbboxes
+                num += 1
+            self.batch_count += 1
+            return batch_image, batch_label_sbbox, batch_label_mbbox, batch_label_lbbox, \
+                   batch_sbboxes, batch_mbboxes, batch_lbboxes
+        else:
+            self.batch_count = 0
+            raise StopIteration
 
     def load_annotations(self):
         with open(self.annot_path, 'r') as f:
@@ -205,8 +206,10 @@ class Dataset(object):
         inter_section = np.maximum(right_down - left_up, 0.0)
         inter_area = inter_section[..., 0] * inter_section[..., 1]
         union_area = boxes1_area + boxes2_area - inter_area
+        iou = np.maximum(1.0 * inter_area / union_area, np.finfo(np.float32).eps)
+        return iou
 
-        return inter_area / np.maximum(union_area, 1e-7)
+        # return inter_area / np.maximum(union_area, 1e-7)
 
     def preprocess_true_boxes(self, bboxes):
 
@@ -232,16 +235,17 @@ class Dataset(object):
             exist_positive = False
             for i in range(3):
                 anchors_xywh = np.zeros((self.anchor_per_scale, 4))
-                anchors_xywh[:, 0:2] = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32) + 0.5
+                anchors_xywh[:, 0:2] = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int64) + 0.5
                 anchors_xywh[:, 2:4] = self.anchors[i]
                 # print("anchors_xywh[:, 2:4]: ", anchors_xywh[:, 2:4])
 
                 iou_scale = self.bbox_iou(bbox_xywh_scaled[i][np.newaxis, :], anchors_xywh)
+                # print("iou_scale: ", iou_scale)
                 iou.append(iou_scale)
-                iou_mask = iou_scale > 0.5
+                iou_mask = iou_scale > 0.3
 
                 if np.any(iou_mask):
-                    xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
+                    xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int64)
 
                     label[i][yind, xind, iou_mask, :] = 0
                     label[i][yind, xind, iou_mask, 0:4] = bbox_xywh
@@ -258,7 +262,7 @@ class Dataset(object):
                 best_anchor_ind = np.argmax(np.array(iou).reshape(-1), axis=-1)
                 best_detect = int(best_anchor_ind / self.anchor_per_scale)
                 best_anchor = int(best_anchor_ind % self.anchor_per_scale)
-                xind, yind = np.floor(bbox_xywh_scaled[best_detect, 0:2]).astype(np.int32)
+                xind, yind = np.floor(bbox_xywh_scaled[best_detect, 0:2]).astype(np.int64)
 
                 label[best_detect][yind, xind, best_anchor, :] = 0
                 label[best_detect][yind, xind, best_anchor, 0:4] = bbox_xywh
@@ -268,6 +272,7 @@ class Dataset(object):
                 bbox_ind = int(bbox_count[best_detect] % self.max_bbox_per_scale)
                 bboxes_xywh[best_detect][bbox_ind, :4] = bbox_xywh
                 bbox_count[best_detect] += 1
+
         label_sbbox, label_mbbox, label_lbbox = label
         sbboxes, mbboxes, lbboxes = bboxes_xywh
         return label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes

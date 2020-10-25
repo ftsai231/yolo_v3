@@ -1,18 +1,18 @@
 import tensorflow as tf
 from config import cfg
-
+import numpy as np
 
 def batch_norm(inputs, training, data_format):
     """Performs a batch normalization using a standard set of parameters."""
-    # return tf.layers.batch_normalization(inputs, beta_initializer=tf.zeros_initializer(),
-    #                                              gamma_initializer=tf.ones_initializer(),
-    #                                              moving_mean_initializer=tf.zeros_initializer(),
-    #                                              moving_variance_initializer=tf.ones_initializer(), training=training)
+    return tf.layers.batch_normalization(inputs, beta_initializer=tf.zeros_initializer(),
+                                                 gamma_initializer=tf.ones_initializer(),
+                                                 moving_mean_initializer=tf.zeros_initializer(),
+                                                 moving_variance_initializer=tf.ones_initializer(), training=training)
 
-    return tf.layers.batch_normalization(
-            inputs=inputs,
-            momentum=cfg._BATCH_NORM_DECAY, epsilon=cfg._BATCH_NORM_EPSILON,
-            scale=True, training=training)
+    # return tf.layers.batch_normalization(
+    #         inputs=inputs,
+    #         momentum=cfg._BATCH_NORM_DECAY, epsilon=cfg._BATCH_NORM_EPSILON,
+    #         scale=True, training=training)
 
 def fixed_padding(inputs, kernel_size, data_format):
     """ResNet implementation of fixed padding.
@@ -349,10 +349,8 @@ def bbox_giou(boxes1, boxes2):
     enclose_right_down = tf.maximum(boxes1[..., 2:], boxes2[..., 2:])
     enclose = tf.maximum(enclose_right_down - enclose_left_up, 0.0)
     enclose_area = enclose[..., 0] * enclose[..., 1]
-    giou = iou - 1.0 * (enclose_area - union_area) / tf.maximum(enclose_area, 1e-7)
-    if tf.is_nan(giou) is True:
-        print("giou is nan!")
-        print("enclose_area: ", enclose_area)
+    giou = iou - 1.0 * (enclose_area - union_area) / tf.maximum(enclose_area, 1e-5)
+    # giou = tf.maximum(1.0 * inter_area / union_area, np.finfo(np.float32).eps)
 
     return giou
 

@@ -117,10 +117,18 @@ class YoloV3:
         with tf.name_scope('prob_loss'):
             prob_loss = loss_sbbox[2] + loss_mbbox[2] + loss_lbbox[2]
 
-        return giou_loss, conf_loss, prob_loss
+        debug = loss_sbbox[3] + loss_mbbox[3] + loss_lbbox[3]
+
+        return giou_loss, conf_loss, prob_loss, debug
 
     def loss_layer(self, conv, pred, label, bboxes, anchors, stride):
         # np.set_printoptions(threshold=np.inf)
+        debug = []
+
+        conv = tf.cast(conv, tf.float64)
+        pred = tf.cast(pred, tf.float64)
+        label = tf.cast(label, tf.float64)
+        bboxes = tf.cast(bboxes, tf.float64)
 
         conv_shape = tf.shape(conv)
         batch_size = conv_shape[0]
@@ -137,24 +145,32 @@ class YoloV3:
         label_xywh = label[:, :, :, :, 0:4]
         respond_bbox = label[:, :, :, :, 4:5]
         label_prob = label[:, :, :, :, 5:]
-
         giou = tf.expand_dims(bbox_giou(pred_xywh, label_xywh), axis=-1)
-        input_size = tf.cast(input_size, tf.float32)
+        giou = tf.where(tf.is_nan(giou), tf.zeros_like(giou), giou)
+        giou = tf.cast(giou, tf.float64)
+        line = tf.convert_to_tensor("------------------------------------------------------------------------------")
+        debug.append(giou)
+        debug.append(line)
+
+        input_size = tf.cast(input_size, tf.float64)
 
         bbox_loss_scale = 2.0 - 1.0 * label_xywh[:, :, :, :, 2:3] * label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
         giou_loss = respond_bbox * bbox_loss_scale * (1 - giou)
+        giou_loss = tf.where(tf.is_nan(giou_loss), tf.zeros_like(giou_loss), giou_loss)
+        giou_loss_64 = tf.cast(giou_loss, tf.float64)
+        debug.append(giou_loss_64)
+        debug.append(line)
 
-
-        # if tf.is_nan(giou_loss) is True:
-        #     giou_loss = self._giou_loss_backup
-        #     print("giou_loss is nan!")
-        # else:
-        #     self._giou_loss_backup = giou_loss
+        # Box loss with x, y, w, h (need to scale either pred or label)
+        # box_pred_xywh = tf.concat([pred_xywh[:, :, :, :, 0:2], tf.sqrt(pred_xywh[:, :, :, :, 2:4])], axis=-1)
+        # box_label_xywh = tf.concat((label_xywh[:, :, :, :, 0:2], tf.sqrt(label_xywh[:, :, :, :, 2:4])), axis=-1)
+        # bbox_loss = respond_bbox * focal(box_pred_xywh, box_label_xywh)
+        # bbox_loss = tf.reduce_mean(tf.reduce_sum(bbox_loss, axis=[1, 2, 3, 4]))
 
         iou = self.bbox_iou(pred_xywh[:, :, :, :, np.newaxis, :], bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
         max_iou = tf.expand_dims(tf.reduce_max(iou, axis=-1), axis=-1)
 
-        respond_bgd = (1.0 - respond_bbox) * tf.cast(max_iou < self.iou_loss_thresh, tf.float32)
+        respond_bgd = (1.0 - respond_bbox) * tf.cast(max_iou < self.iou_loss_thresh, tf.float64)
 
         conf_focal = focal(respond_bbox, pred_conf)
 
@@ -163,20 +179,21 @@ class YoloV3:
                 +
                 respond_bgd * tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=conv_raw_conf)
         )
+        conf_loss = tf.where(tf.is_nan(conf_loss), tf.zeros_like(conf_loss), conf_loss)
+        conf_loss_64 = tf.cast(conf_loss, dtype=tf.float64)
 
         prob_loss = respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_prob, logits=conv_raw_prob)
+        prob_loss = tf.where(tf.is_nan(prob_loss), tf.zeros_like(prob_loss), prob_loss)
+        prob_loss_64 = tf.cast(prob_loss, dtype=tf.float64)
+        # cross_entropy = -tf.reduce_sum(y_ * tf.log(tf.clip_by_value(y_conv, 1e-10, 1.0)))
 
-        giou_loss = tf.reduce_mean(tf.reduce_sum(giou_loss, axis=[1, 2, 3, 4]))
-        conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1, 2, 3, 4]))
-        prob_loss = tf.reduce_mean(tf.reduce_sum(prob_loss, axis=[1, 2, 3, 4]))
+        conf_loss_mean = tf.reduce_mean(tf.reduce_sum(conf_loss_64, axis=[1, 2, 3, 4]))
+        prob_loss_mean = tf.reduce_mean(tf.reduce_sum(prob_loss_64, axis=[1, 2, 3, 4]))
+        giou_loss_mean = tf.reduce_mean(tf.reduce_sum(giou_loss_64, axis=[1, 2, 3, 4]))
 
-        if tf.is_nan(giou_loss) is True:
-            giou_loss = self._giou_loss_backup
-            print("giou_loss is nan!")
-        else:
-            self._giou_loss_backup = giou_loss
+        debug.append(giou_loss_mean)
 
-        return giou_loss, conf_loss, prob_loss
+        return giou_loss_mean, conf_loss_mean, prob_loss_mean, debug
 
     def bbox_iou(self, boxes1, boxes2):
         boxes1_area = boxes1[..., 2] * boxes1[..., 3]
@@ -194,6 +211,7 @@ class YoloV3:
         inter_area = inter_section[..., 0] * inter_section[..., 1]
         union_area = boxes1_area + boxes2_area - inter_area
         iou = 1.0 * inter_area / tf.maximum(union_area, 1e-7)
+        # iou = np.maximum(1.0 * inter_area / union_area, np.finfo(np.float32).eps)
 
         return iou
 
